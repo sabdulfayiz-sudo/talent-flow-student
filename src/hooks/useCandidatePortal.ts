@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiFetch, buildQuery } from '../lib/api';
 import type {
+  AchievementsResponse,
   AIProfileResponse,
   AnalyticsResponse,
   AssessmentsResponse,
@@ -9,11 +10,14 @@ import type {
   CertificatesResponse,
   CandidateMe,
   DashboardResponse,
+  LeaderboardResponse,
   NextQuestionResponse,
   NotificationsResponse,
   PortalStatus,
+  PracticeCategoriesResponse,
   PracticeEligibility,
   PracticeInfo,
+  PracticeNextQuestionResponse,
   ProfileUpdatePayload,
   ReportResponse,
   ResumeReview,
@@ -37,6 +41,9 @@ export const portalKeys = {
   eligibility: (practiceId: string) => ['testing', 'eligibility', practiceId] as const,
   session: (sessionId: string) => ['testing', 'session', sessionId] as const,
   nextQuestion: (sessionId: string) => ['testing', 'nextQuestion', sessionId] as const,
+  leaderboard: (scope: string) => ['candidatePortal', 'leaderboard', scope] as const,
+  achievements: ['candidatePortal', 'achievements'] as const,
+  practiceCategories: ['candidatePortal', 'practice', 'categories'] as const,
 };
 
 export const useCandidateMe = () => (
@@ -291,4 +298,41 @@ export const useSubmitAnswer = (sessionId?: string) => {
       queryClient.invalidateQueries({ queryKey: ['candidatePortal', 'assessments'] });
     },
   });
+};
+
+export const useLeaderboard = (scope: 'group' | 'global' = 'group') => (
+  useQuery({
+    queryKey: portalKeys.leaderboard(scope),
+    queryFn: () => apiFetch<LeaderboardResponse>(`/candidate/portal/leaderboard${buildQuery({ scope })}`),
+    staleTime: 1000 * 60,
+  })
+);
+
+export const useAchievements = () => (
+  useQuery({
+    queryKey: portalKeys.achievements,
+    queryFn: () => apiFetch<AchievementsResponse>('/candidate/portal/achievements'),
+    staleTime: 1000 * 60,
+  })
+);
+
+export const usePracticeCategories = () => (
+  useQuery({
+    queryKey: portalKeys.practiceCategories,
+    queryFn: () => apiFetch<PracticeCategoriesResponse>('/candidate/portal/practice/categories'),
+    staleTime: 1000 * 60 * 10,
+  })
+);
+
+export const fetchPracticeNextQuestion = (params: {
+  category?: string;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  excludeIds?: string[];
+}) => {
+  const query = buildQuery({
+    category: params.category,
+    difficulty: params.difficulty,
+    exclude_ids: params.excludeIds?.join(',') ?? undefined,
+  });
+  return apiFetch<PracticeNextQuestionResponse>(`/candidate/portal/practice/next-question${query}`);
 };

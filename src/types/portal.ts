@@ -334,3 +334,68 @@ export interface SubmitAnswerResponse {
   is_finished: boolean;
   final_score: number | null;
 }
+
+export interface LeaderboardItem {
+  rank: number;
+  user_id: string | null;
+  display_name: string;
+  is_self: boolean;
+  group_name: string | null;
+  average_score: number;
+  completed_sessions: number;
+  last_activity_at: string | null;
+}
+
+export interface LeaderboardResponse {
+  scope: 'group' | 'global';
+  group_name: string | null;
+  items: LeaderboardItem[];
+  you_rank: number | null;
+  total_ranked: number;
+}
+
+export interface AchievementBadge {
+  id: string;
+  title: string;
+  description: string;
+  tier: 'bronze' | 'silver' | 'gold';
+  earned: boolean;
+  progress: number;
+  target: number;
+}
+
+export interface AchievementsResponse {
+  summary: {
+    completed_assessments: number;
+    perfect_scores: number;
+    average_score: number;
+    certificates: number;
+    current_streak_days: number;
+  };
+  badges: AchievementBadge[];
+  earned_count: number;
+  total_count: number;
+}
+
+export interface PracticeCategory {
+  category: string;
+  question_count: number;
+}
+
+export interface PracticeCategoriesResponse {
+  items: PracticeCategory[];
+}
+
+export interface PracticeQuestion {
+  id: string;
+  text: string;
+  options: QuestionOption[] | Record<string, QuestionOption | string>;
+  category: string | null;
+  difficulty_level: number | null;
+  correct_answer: string;
+}
+
+export interface PracticeNextQuestionResponse {
+  event: 'practice_question' | 'exhausted';
+  question: PracticeQuestion | null;
+}

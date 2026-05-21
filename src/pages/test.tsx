@@ -1,11 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
+  FullscreenExitOutlined,
   PlayCircleOutlined,
+  SafetyCertificateOutlined,
   SendOutlined,
+  WarningFilled,
 } from '@ant-design/icons';
-import { Progress, Spin, message } from 'antd';
+import { Progress, Spin, Tooltip, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   useNextQuestion,
@@ -15,6 +18,12 @@ import {
   useStartSession,
   useSubmitAnswer,
 } from '../hooks/useCandidatePortal';
+import { useAntiCheat } from '../hooks/useAntiCheat';
+import { useAppSelector } from '../app/hooks';
+import IntegrityGate from '../components/test/integrityGate';
+import Watermark from '../components/test/watermark';
+import { HUMAN_LABELS } from '../types/integrity';
+import { apiFetch } from '../lib/api';
 import type { NextQuestionResponse, QuestionOption } from '../types/portal';
 
 const normalizeOptions = (question?: NextQuestionResponse): QuestionOption[] => {
@@ -49,12 +58,15 @@ const formatSeconds = (value?: number | null) => {
 const TestPage: React.FC = () => {
   const { practiceId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAppSelector((state) => state.auth);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [answerState, setAnswerState] = useState<{ questionId: string | null; answerId: string | null }>({
     questionId: null,
     answerId: null,
   });
+  const [gateOpen, setGateOpen] = useState(false);
   const questionStartedAtRef = useRef(0);
+  const autoSubmittedRef = useRef(false);
   const { data: practice, isLoading: practiceLoading } = usePracticeInfo(practiceId);
   const { data: eligibility, isLoading: eligibilityLoading } = usePracticeEligibility(practiceId);
   const effectiveSessionId = sessionId ?? (eligibility?.can_resume ? eligibility.session_id ?? undefined : undefined);
@@ -64,6 +76,42 @@ const TestPage: React.FC = () => {
   const submitAnswer = useSubmitAnswer(effectiveSessionId);
   const options = useMemo(() => normalizeOptions(nextQuestion.data), [nextQuestion.data]);
   const selectedAnswer = answerState.questionId === nextQuestion.data?.id ? answerState.answerId : null;
+
+  const studentDisplayName = useMemo(() => {
+    if (!user) return 'Student';
+    const fullName = [user.name, user.surname].filter(Boolean).join(' ').trim();
+    return fullName || user.username || user.email || 'Student';
+  }, [user]);
+
+  const watermarkLabel = useMemo(() => {
+    const id = user?.id ? ` · ${user.id.slice(0, 8)}` : '';
+    return `${studentDisplayName}${id}`;
+  }, [studentDisplayName, user]);
+
+  const isTestActive = Boolean(effectiveSessionId) && !progress?.is_finished;
+
+  const handleAutoSubmit = useCallback(async () => {
+    if (autoSubmittedRef.current) return;
+    autoSubmittedRef.current = true;
+    if (!effectiveSessionId) return;
+    try {
+      await apiFetch(`/testing/sessions/${effectiveSessionId}/finish`, {
+        method: 'POST',
+      });
+    } catch {
+      // Even if the finish call fails, redirecting away is the right UX —
+      // the server timer will still finalize the session if the user
+      // closes the tab.
+    }
+    message.warning('Your test was auto-submitted due to integrity violations.');
+    navigate(`/reports/${effectiveSessionId}`, { replace: true });
+  }, [effectiveSessionId, navigate]);
+
+  const { penalty, warning, integrityScore, reportEvent, violations } = useAntiCheat({
+    sessionId: effectiveSessionId,
+    enabled: isTestActive,
+    onHardStop: handleAutoSubmit,
+  });
 
   useEffect(() => {
     if (eligibility?.status === 'finished' && eligibility.session_id) {
@@ -80,11 +128,33 @@ const TestPage: React.FC = () => {
     }
   }, [nextQuestion.data, navigate, effectiveSessionId]);
 
-  const handleStart = async () => {
+  const handleStartClick = () => {
+    if (!practiceId) return;
+    if (eligibility?.can_resume) {
+      // Resuming an in-flight session — skip the policy gate but still
+      // log an audit event.
+      void runStart({ requestFullscreen: false, resume: true });
+      return;
+    }
+    setGateOpen(true);
+  };
+
+  const runStart = async (opts: { requestFullscreen: boolean; resume?: boolean }) => {
     if (!practiceId) return;
     try {
       const session = await startSession.mutateAsync(practiceId);
       setSessionId(session.session_id);
+      setGateOpen(false);
+      reportEvent(opts.resume ? 'session_resumed' : 'policy_accepted', {
+        request_fullscreen: opts.requestFullscreen,
+      });
+      if (opts.requestFullscreen) {
+        try {
+          await document.documentElement.requestFullscreen();
+        } catch {
+          reportEvent('fullscreen_request_denied');
+        }
+      }
       message.success('Assessment ready.');
     } catch (error) {
       message.error(error instanceof Error ? error.message : 'Unable to start assessment.');
@@ -128,6 +198,9 @@ const TestPage: React.FC = () => {
   const percent = total ? Math.round((answered / total) * 100) : 0;
   const isBlocked = eligibility && !eligibility.can_start && !eligibility.can_resume && eligibility.status !== 'finished';
 
+  const integrityTone = integrityScore >= 90 ? 'text-emerald-600 bg-emerald-50' : integrityScore >= 70 ? 'text-amber-600 bg-amber-50' : 'text-rose-600 bg-rose-50';
+  const recentViolations = violations.slice(-3).reverse();
+
   if (!effectiveSessionId) {
     return (
       <div className="max-w-220 mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -154,15 +227,28 @@ const TestPage: React.FC = () => {
             </div>
           </div>
 
+          <div className="mt-8 rounded-2xl border border-blue-100 bg-blue-50 text-blue-700 p-4 flex items-start gap-3 text-sm">
+            <SafetyCertificateOutlined className="mt-0.5 text-lg" />
+            <div className="space-y-1">
+              <p className="font-bold">Proctored session</p>
+              <p className="text-blue-700/80 leading-relaxed">
+                Tab switches, copy/paste, right-click and developer tools are
+                monitored. Questions and answer options are randomized per
+                attempt, and the next question adapts to your previous
+                answers.
+              </p>
+            </div>
+          </div>
+
           {isBlocked && (
-            <div className="mt-8 rounded-2xl bg-amber-50 text-amber-700 p-4 text-sm font-semibold">
+            <div className="mt-4 rounded-2xl bg-amber-50 text-amber-700 p-4 text-sm font-semibold">
               {eligibility.reason ?? 'This assessment is not available.'}
             </div>
           )}
 
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
             <button
-              onClick={handleStart}
+              onClick={handleStartClick}
               disabled={startSession.isPending || Boolean(isBlocked)}
               className="flex items-center justify-center gap-2 bg-black text-white px-6 py-3.5 rounded-2xl font-bold text-[13px] hover:bg-gray-800 transition-all shadow-lg shadow-black/10 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
             >
@@ -174,6 +260,15 @@ const TestPage: React.FC = () => {
             </button>
           </div>
         </section>
+
+        <IntegrityGate
+          open={gateOpen}
+          studentName={studentDisplayName}
+          durationMinutes={practice.duration_minutes}
+          questionCount={practice.question_count}
+          onAccept={runStart}
+          onCancel={() => setGateOpen(false)}
+        />
       </div>
     );
   }
@@ -186,19 +281,57 @@ const TestPage: React.FC = () => {
     );
   }
 
+  const secondsLeft = progress?.seconds_remaining;
+  const timerLow = typeof secondsLeft === 'number' && secondsLeft <= 60;
+
   return (
-    <div className="max-w-240 mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="flex items-center justify-between gap-4">
+    <div className="relative max-w-240 mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 select-none">
+      <Watermark label={watermarkLabel} />
+
+      <div className="relative z-20 flex items-center justify-between gap-4 flex-wrap">
         <button onClick={() => navigate('/my-assessments')} className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-black transition-colors cursor-pointer">
           <ArrowLeftOutlined /> Assessments
         </button>
-        <div className="flex items-center gap-2 rounded-full bg-white border border-gray-100 px-4 py-2 text-sm font-black text-gray-900">
-          <ClockCircleOutlined className="text-gray-400" />
-          {formatSeconds(progress?.seconds_remaining)}
+        <div className="flex items-center gap-3">
+          <Tooltip title={`Integrity score reflects logged anti-cheat events. ${violations.length} event(s) so far.`}>
+            <div className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${integrityTone}`}>
+              <SafetyCertificateOutlined /> Integrity {integrityScore}%
+            </div>
+          </Tooltip>
+          <div className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-black ${timerLow ? 'bg-rose-50 border-rose-200 text-rose-600 animate-pulse' : 'bg-white border-gray-100 text-gray-900'}`}>
+            <ClockCircleOutlined className={timerLow ? 'text-rose-500' : 'text-gray-400'} />
+            {formatSeconds(secondsLeft)}
+          </div>
         </div>
       </div>
 
-      <section className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
+      {warning && (
+        <div className="relative z-20 rounded-2xl border border-rose-100 bg-rose-50 text-rose-700 p-4 flex items-start gap-3 text-sm">
+          <WarningFilled className="mt-0.5 text-lg" />
+          <div className="flex-1 font-semibold">{warning}</div>
+          <span className="text-xs font-black bg-white text-rose-700 px-2 py-1 rounded-full border border-rose-200">
+            penalty {penalty}
+          </span>
+        </div>
+      )}
+
+      {recentViolations.length > 0 && (
+        <div className="relative z-20 rounded-2xl border border-amber-100 bg-amber-50/60 p-4 text-xs text-amber-800 flex items-start gap-3">
+          <FullscreenExitOutlined className="mt-0.5 text-base" />
+          <div>
+            <p className="font-black uppercase tracking-widest mb-1">Recent integrity events</p>
+            <ul className="space-y-0.5">
+              {recentViolations.map((v) => (
+                <li key={v.id} className="font-semibold">
+                  · {HUMAN_LABELS[v.type] ?? v.type} ({v.severity})
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      <section className="relative z-20 bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
             <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">{practice.title}</p>
@@ -221,8 +354,8 @@ const TestPage: React.FC = () => {
               onClick={() => setAnswerState({ questionId: nextQuestion.data?.id ?? null, answerId: option.id })}
               className={`text-left rounded-2xl border p-5 font-semibold transition-all cursor-pointer ${
                 selectedAnswer === option.id
-                  ? 'border-black bg-black text-white shadow-lg shadow-black/10'
-                  : 'border-gray-100 bg-white hover:border-gray-300 text-gray-700'
+                  ? 'bg-black text-white border-black shadow-lg shadow-black/10'
+                  : 'bg-white border-gray-200 hover:border-gray-400'
               }`}
             >
               {option.text}
@@ -230,14 +363,15 @@ const TestPage: React.FC = () => {
           ))}
         </div>
 
-        <div className="mt-8 flex justify-end">
+        <div className="mt-8 flex flex-col-reverse sm:flex-row sm:justify-between sm:items-center gap-3">
+          <p className="text-[11px] text-gray-400">Adaptive difficulty — your next question depends on how you answer.</p>
           <button
             onClick={handleSubmit}
             disabled={!selectedAnswer || submitAnswer.isPending}
-            className="flex items-center justify-center gap-2 bg-black text-white px-6 py-3.5 rounded-2xl font-bold text-[13px] hover:bg-gray-800 transition-all shadow-lg shadow-black/10 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+            className="flex items-center justify-center gap-2 bg-black text-white px-6 py-3 rounded-2xl font-bold text-[13px] hover:bg-gray-800 transition-all shadow-lg shadow-black/10 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
+            {submitAnswer.isPending ? 'Submitting…' : 'Submit answer'}
             <SendOutlined />
-            {submitAnswer.isPending ? 'Submitting...' : 'Submit Answer'}
           </button>
         </div>
       </section>
