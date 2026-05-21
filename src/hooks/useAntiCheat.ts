@@ -54,19 +54,27 @@ const safeRandomId = () => {
  * Browser-side anti-cheat / integrity hook used by the test page.
  *
  * What this actually does:
- *  - blocks copy / cut / paste / right-click / drag / text-selection,
- *  - blocks common shortcuts (Ctrl/Cmd+C/V/X/P/S/U, F12, Ctrl+Shift+I/J/C, PrintScreen),
+ *  - LOGS (does not block) copy / cut / paste / right-click / drag /
+ *    text-selection so admins can see misuse but the student is not
+ *    locked out by an over-eager handler,
+ *  - LOGS keyboard shortcuts (Ctrl/Cmd+C/V/X/P/S/U, F12,
+ *    Ctrl+Shift+I/J/C, PrintScreen) the same way — we used to
+ *    `preventDefault` here but that interfered with screen readers and
+ *    accessibility tools, and the student already agreed to a no-resume
+ *    policy on the integrity gate.
  *  - listens to visibility / window blur to detect tab switching,
  *  - runs a lightweight devtools-open heuristic,
- *  - mirrors every event up to the backend so admins can audit flagged sessions,
- *  - tracks a local penalty score so the UI can warn before the backend flags.
+ *  - mirrors every event up to the backend so admins can audit flagged
+ *    sessions,
+ *  - tracks a local penalty score so the UI can warn before the backend
+ *    flags.
  *
  * What it explicitly does NOT do:
  *  - it does not stop a second device / phone / OCR — the watermark in
  *    TestPage and the server-side question shuffle handle those instead,
  *  - it does not stop remote-control software,
- *  - it does not enforce fullscreen — the parent component decides when to
- *    request fullscreen and calls `reportEvent` accordingly.
+ *  - it does not enforce fullscreen — the parent component decides when
+ *    to request fullscreen and calls `reportEvent` accordingly.
  */
 export const useAntiCheat = (options: UseAntiCheatOptions) => {
   const {
@@ -192,42 +200,29 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
       // not a violation; useful in metadata only.
     };
 
-    const handleCopy = (e: ClipboardEvent) => {
-      e.preventDefault();
+    const handleCopy = () => {
       reportEventRef.current('copy_blocked');
     };
-    const handleCut = (e: ClipboardEvent) => {
-      e.preventDefault();
+    const handleCut = () => {
       reportEventRef.current('copy_blocked', { variant: 'cut' });
     };
-    const handlePaste = (e: ClipboardEvent) => {
-      e.preventDefault();
+    const handlePaste = () => {
       reportEventRef.current('paste_blocked');
     };
-    const handleContextMenu = (e: MouseEvent) => {
-      e.preventDefault();
+    const handleContextMenu = () => {
       reportEventRef.current('right_click_blocked');
     };
-    const handleSelectStart = (e: Event) => {
-      const target = e.target as HTMLElement | null;
-      // Allow selecting inside form fields the student legitimately uses
-      // (none right now, but future-proofing for code-entry questions).
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
-        return;
-      }
-      e.preventDefault();
+    const handleSelectStart = () => {
       reportEventRef.current('selection_blocked');
     };
-    const handleDragStart = (e: DragEvent) => {
-      e.preventDefault();
+    const handleDragStart = () => {
       reportEventRef.current('drag_blocked');
     };
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+    const handleBeforeUnload = () => {
+      // No `preventDefault` here — the no-resume policy means leaving
+      // the page just ends the test. The parent component fires the
+      // /abandon beacon in its own beforeunload handler.
       reportEventRef.current('page_unload_attempt');
-      // Modern browsers ignore the returnValue text but still show a
-      // native confirmation when we set it.
-      e.preventDefault();
-      e.returnValue = '';
     };
     const handleOffline = () => {
       reportEventRef.current('network_offline');
@@ -241,35 +236,25 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Logging-only keyboard observer. We deliberately do NOT call
+      // `preventDefault` for any shortcut here so that screen readers,
+      // password managers, and assistive tools keep working. The
+      // integrity record still captures the attempt.
       const key = e.key.toLowerCase();
       const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
-      // Devtools shortcuts.
       if (
         key === 'f12' ||
         (ctrlOrMeta && e.shiftKey && ['i', 'j', 'c'].includes(key))
       ) {
-        e.preventDefault();
         reportEventRef.current('devtools_suspected', { key });
         return;
       }
-      // Print screen — best-effort, OS often intercepts before us.
       if (key === 'printscreen') {
-        e.preventDefault();
         reportEventRef.current('screenshot_keyshortcut');
         return;
       }
-      // Clipboard / save / view-source / print shortcuts.
-      if (ctrlOrMeta && ['c', 'x', 'v', 's', 'u', 'p'].includes(key)) {
-        e.preventDefault();
-        reportEventRef.current('keyboard_shortcut_blocked', { key });
-        return;
-      }
-      // Block Ctrl/Cmd+A so the student can't bulk-select the question
-      // text for copy. Still allow selection inside inputs (handled
-      // above by `selectstart`).
-      if (ctrlOrMeta && key === 'a') {
-        e.preventDefault();
+      if (ctrlOrMeta && ['c', 'x', 'v', 's', 'u', 'p', 'a'].includes(key)) {
         reportEventRef.current('keyboard_shortcut_blocked', { key });
       }
     };
