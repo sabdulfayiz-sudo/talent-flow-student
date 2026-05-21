@@ -3,6 +3,16 @@ import { apiFetch } from '../lib/api';
 import type { IntegrityEventType, IntegritySeverity } from '../types/integrity';
 import { EVENT_SEVERITY_HINT } from '../types/integrity';
 
+// Backend severity enum is `info | warn | critical`. The local hint
+// uses `high | medium | low | info` to drive client penalty math; we
+// collapse it down to the wire enum here.
+const WIRE_SEVERITY: Record<IntegritySeverity, 'info' | 'warn' | 'critical'> = {
+  high: 'critical',
+  medium: 'warn',
+  low: 'info',
+  info: 'info',
+};
+
 export interface IntegrityViolation {
   id: string;
   type: IntegrityEventType | string;
@@ -82,17 +92,31 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
     if (!batch.length) return;
     // Send sequentially-ish; we don't await because the test UI shouldn't
     // wait on integrity reporting. Errors are swallowed because a flaky
-    // network shouldn't block the student.
+    // network shouldn't block the student. The backend may respond with
+    // `{finished: true}` on a strike threshold breach — if so we trip
+    // the hard-stop callback so the parent can navigate away.
     batch.forEach((v) => {
-      apiFetch(`/testing/sessions/${sessionId}/integrity-events`, {
-        method: 'POST',
-        body: JSON.stringify({
-          event_type: v.type,
-          metadata: v.metadata ?? {},
-        }),
-      }).catch(() => {
-        // swallow — integrity reporting is best-effort.
-      });
+      apiFetch<{ finished?: boolean; reason?: string; strikes?: number }>(
+        `/testing/sessions/${sessionId}/events`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            event_type: v.type,
+            severity: WIRE_SEVERITY[v.severity],
+            payload: v.metadata ?? {},
+          }),
+        },
+      )
+        .then((response) => {
+          if (response?.finished && !hardStopFiredRef.current) {
+            hardStopFiredRef.current = true;
+            setWarning(response.reason ?? 'Session ended by anti-cheat policy.');
+            setTimeout(() => onHardStop?.(violations), 0);
+          }
+        })
+        .catch(() => {
+          // swallow — integrity reporting is best-effort.
+        });
     });
   };
 
