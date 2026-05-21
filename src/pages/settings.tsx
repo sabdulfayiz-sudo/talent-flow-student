@@ -7,13 +7,14 @@ import {
   SoundFilled,
 } from '@ant-design/icons';
 import { Segmented, Switch, message } from 'antd';
+import { useI18n, type Locale } from '../i18n';
 
 const THEME_KEY = 'tf-theme';
 const NOTIF_KEY = 'tf-notifications';
 const SOUND_KEY = 'tf-sound';
-const LANG_KEY = 'tf-language';
 
 const SettingsPage: React.FC = () => {
+  const { locale, setLocale, t } = useI18n();
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(
     () => (localStorage.getItem(THEME_KEY) as 'light' | 'dark' | 'system') || 'light',
   );
@@ -22,9 +23,6 @@ const SettingsPage: React.FC = () => {
   );
   const [sound, setSound] = useState(
     () => localStorage.getItem(SOUND_KEY) !== 'false',
-  );
-  const [language, setLanguage] = useState(
-    () => localStorage.getItem(LANG_KEY) || 'en',
   );
 
   useEffect(() => {
@@ -42,11 +40,10 @@ const SettingsPage: React.FC = () => {
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div>
-        <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Preferences</p>
-        <h2 className="text-4xl font-bold tracking-tighter text-gray-900 leading-none mb-3">Settings</h2>
+        <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">{t('nav.settings')}</p>
+        <h2 className="text-4xl font-bold tracking-tighter text-gray-900 leading-none mb-3">{t('settings.title')}</h2>
         <p className="text-gray-500 font-medium max-w-180">
-          Personal preferences that live in this browser. Account-level
-          settings live on the profile page.
+          {t('settings.subtitle')}
         </p>
       </div>
 
@@ -56,22 +53,21 @@ const SettingsPage: React.FC = () => {
             <BulbFilled />
           </div>
           <div>
-            <h3 className="text-lg font-black text-gray-900">Appearance</h3>
-            <p className="text-sm text-gray-500">Choose how the dashboard looks.</p>
+            <h3 className="text-lg font-black text-gray-900">{t('settings.appearance')}</h3>
+            <p className="text-sm text-gray-500">{t('settings.appearanceSubtitle')}</p>
           </div>
         </header>
         <Segmented
           value={theme}
           onChange={(value) => setTheme(value as 'light' | 'dark' | 'system')}
           options={[
-            { label: 'Light', value: 'light' },
-            { label: 'Dark', value: 'dark' },
-            { label: 'System', value: 'system' },
+            { label: t('settings.themeLight'), value: 'light' },
+            { label: t('settings.themeDark'), value: 'dark' },
+            { label: t('settings.themeSystem'), value: 'system' },
           ]}
         />
         <p className="text-[11px] text-gray-400 mt-3">
-          Dark mode is in beta — most pages already follow it but a few
-          dashboards still render light surfaces.
+          {t('settings.darkBeta')}
         </p>
       </section>
 
@@ -81,14 +77,14 @@ const SettingsPage: React.FC = () => {
             <BellFilled />
           </div>
           <div>
-            <h3 className="text-lg font-black text-gray-900">Notifications</h3>
-            <p className="text-sm text-gray-500">Tune in-app alerts.</p>
+            <h3 className="text-lg font-black text-gray-900">{t('settings.notifications')}</h3>
+            <p className="text-sm text-gray-500">{t('settings.notificationsSubtitle')}</p>
           </div>
         </header>
         <div className="flex items-center justify-between gap-3 pt-2">
           <div>
-            <p className="font-bold text-gray-900">Show notification dropdown</p>
-            <p className="text-xs text-gray-500">Hides the bell icon when off.</p>
+            <p className="font-bold text-gray-900">{t('settings.showBell')}</p>
+            <p className="text-xs text-gray-500">{t('settings.showBellHint')}</p>
           </div>
           <Switch
             checked={notifications}
@@ -101,8 +97,8 @@ const SettingsPage: React.FC = () => {
         </div>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="font-bold text-gray-900">Audible alerts</p>
-            <p className="text-xs text-gray-500 flex items-center gap-1"><SoundFilled /> Plays a short chime on important events.</p>
+            <p className="font-bold text-gray-900">{t('settings.audible')}</p>
+            <p className="text-xs text-gray-500 flex items-center gap-1"><SoundFilled /> {t('settings.audibleHint')}</p>
           </div>
           <Switch
             checked={sound}
@@ -120,17 +116,13 @@ const SettingsPage: React.FC = () => {
             <GlobalOutlined />
           </div>
           <div>
-            <h3 className="text-lg font-black text-gray-900">Language</h3>
-            <p className="text-sm text-gray-500">UI language (server content stays in the original language).</p>
+            <h3 className="text-lg font-black text-gray-900">{t('settings.language')}</h3>
+            <p className="text-sm text-gray-500">{t('settings.languageSubtitle')}</p>
           </div>
         </header>
         <Segmented
-          value={language}
-          onChange={(value) => {
-            const next = String(value);
-            setLanguage(next);
-            localStorage.setItem(LANG_KEY, next);
-          }}
+          value={locale}
+          onChange={(value) => setLocale(String(value) as Locale)}
           options={[
             { label: 'English', value: 'en' },
             { label: 'Oʻzbekcha', value: 'uz' },
@@ -138,8 +130,7 @@ const SettingsPage: React.FC = () => {
           ]}
         />
         <p className="text-[11px] text-gray-400 mt-3">
-          Localization is incremental — most page chrome flips immediately,
-          some long-form copy will follow.
+          {t('settings.languageNote')}
         </p>
       </section>
 
@@ -149,17 +140,14 @@ const SettingsPage: React.FC = () => {
             <SafetyCertificateFilled />
           </div>
           <div>
-            <h3 className="text-lg font-black text-gray-900">Privacy &amp; security</h3>
+            <h3 className="text-lg font-black text-gray-900">{t('settings.privacy')}</h3>
             <p className="text-sm text-gray-500">
-              Test sessions log integrity events to your account. You can
-              review them on each report page.
+              {t('settings.privacySubtitle')}
             </p>
           </div>
         </header>
         <p className="text-sm text-gray-600 leading-relaxed">
-          We never sell your data. Integrity events are visible only to you
-          and the admins who assigned the assessment. See the Help page for
-          the full list of monitored behaviors.
+          {t('settings.privacyBody')}
         </p>
       </section>
     </div>

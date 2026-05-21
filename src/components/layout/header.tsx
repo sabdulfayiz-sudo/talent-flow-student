@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BellOutlined,
   BulbOutlined,
+  GlobalOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
   PlayCircleFilled,
   QuestionCircleOutlined,
+  RobotOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
   SettingOutlined,
@@ -19,6 +21,7 @@ import type { MenuProps } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { User } from '../../features/auth/authSlice';
 import { useNotifications } from '../../hooks/useCandidatePortal';
+import { useI18n, SUPPORTED_LOCALES, type Locale } from '../../i18n';
 
 interface HeaderProps {
   user: User | null;
@@ -27,23 +30,35 @@ interface HeaderProps {
   onLogout: () => void;
 }
 
-const QUICK_DESTINATIONS = [
-  { value: '/my-assessments', label: 'My assessments', icon: <ThunderboltFilled /> },
-  { value: '/practice', label: 'Practice lab', icon: <BulbOutlined /> },
-  { value: '/leaderboard', label: 'Leaderboard', icon: <SafetyCertificateOutlined /> },
-  { value: '/achievements', label: 'Achievements', icon: <SafetyCertificateOutlined /> },
-  { value: '/certificates', label: 'Certificates', icon: <SafetyCertificateOutlined /> },
-  { value: '/profile', label: 'Profile', icon: <UserOutlined /> },
-  { value: '/help', label: 'Help', icon: <QuestionCircleOutlined /> },
-  { value: '/settings', label: 'Settings', icon: <SettingOutlined /> },
-];
-
 const THEME_KEY = 'tf-theme';
+
+const LOCALE_LABELS: Record<Locale, string> = {
+  en: 'English',
+  ru: 'Русский',
+  uz: 'Oʻzbekcha',
+};
 
 const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) => {
   const navigate = useNavigate();
   const { data: notifications } = useNotifications();
+  const { locale, setLocale, t } = useI18n();
   const [search, setSearch] = useState('');
+
+  const quickDestinations = useMemo(
+    () => [
+      { value: '/my-assessments', label: t('nav.assessments'), icon: <ThunderboltFilled /> },
+      { value: '/practice', label: t('nav.practice'), icon: <BulbOutlined /> },
+      { value: '/ai-interview', label: t('nav.aiInterview'), icon: <RobotOutlined /> },
+      { value: '/resume-review', label: 'Resume review', icon: <SafetyCertificateOutlined /> },
+      { value: '/leaderboard', label: t('nav.leaderboard'), icon: <SafetyCertificateOutlined /> },
+      { value: '/achievements', label: t('nav.achievements'), icon: <SafetyCertificateOutlined /> },
+      { value: '/certificates', label: t('nav.certificates'), icon: <SafetyCertificateOutlined /> },
+      { value: '/profile', label: t('nav.profile'), icon: <UserOutlined /> },
+      { value: '/help', label: t('nav.help'), icon: <QuestionCircleOutlined /> },
+      { value: '/settings', label: t('nav.settings'), icon: <SettingOutlined /> },
+    ],
+    [t],
+  );
   const [isDark, setIsDark] = useState(() => {
     const saved = localStorage.getItem(THEME_KEY);
     if (saved === 'dark') return true;
@@ -57,13 +72,19 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
   }, [isDark]);
 
   const userMenuItems: MenuProps['items'] = [
-    { key: 'profile', label: 'Profile', icon: <UserOutlined />, onClick: () => navigate('/profile') },
-    { key: 'achievements', label: 'Achievements', icon: <SafetyCertificateOutlined />, onClick: () => navigate('/achievements') },
-    { key: 'settings', label: 'Settings', icon: <SettingOutlined />, onClick: () => navigate('/settings') },
-    { key: 'help', label: 'Help', icon: <QuestionCircleOutlined />, onClick: () => navigate('/help') },
+    { key: 'profile', label: t('nav.profile'), icon: <UserOutlined />, onClick: () => navigate('/profile') },
+    { key: 'achievements', label: t('nav.achievements'), icon: <SafetyCertificateOutlined />, onClick: () => navigate('/achievements') },
+    { key: 'settings', label: t('nav.settings'), icon: <SettingOutlined />, onClick: () => navigate('/settings') },
+    { key: 'help', label: t('nav.help'), icon: <QuestionCircleOutlined />, onClick: () => navigate('/help') },
     { type: 'divider' },
-    { key: 'logout', label: 'Logout', icon: <LogoutOutlined />, onClick: onLogout, danger: true },
+    { key: 'logout', label: t('nav.logout'), icon: <LogoutOutlined />, onClick: onLogout, danger: true },
   ];
+
+  const languageItems: MenuProps['items'] = SUPPORTED_LOCALES.map((code) => ({
+    key: code,
+    label: LOCALE_LABELS[code],
+    onClick: () => setLocale(code),
+  }));
 
   const notificationItems: MenuProps['items'] = notifications?.items.length
     ? notifications.items.map((item, index) => ({
@@ -89,7 +110,7 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
   const handleSearchSubmit = () => {
     const term = search.trim().toLowerCase();
     if (!term) return;
-    const hit = QUICK_DESTINATIONS.find((d) => d.label.toLowerCase().includes(term));
+    const hit = quickDestinations.find((d) => d.label.toLowerCase().includes(term));
     if (hit) {
       navigate(hit.value);
       setSearch('');
@@ -120,23 +141,32 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
             onChange={(e) => setSearch(e.target.value)}
             onPressEnter={handleSearchSubmit}
             prefix={<SearchOutlined className="text-gray-400" />}
-            placeholder="Jump to assessments, practice, leaderboard…"
+            placeholder={t('header.searchPlaceholder')}
             className="rounded-2xl"
           />
         </div>
       </div>
 
       <div className="flex items-center gap-2 lg:gap-3">
-        <Tooltip title="Start a quick practice run">
+        <Tooltip title={t('header.startPractice')}>
           <button
             onClick={() => navigate('/practice')}
             className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-2xl bg-black text-white text-xs font-black uppercase tracking-widest hover:bg-gray-800 cursor-pointer shadow-md shadow-black/10"
           >
-            <PlayCircleFilled /> Practice
+            <PlayCircleFilled /> {t('nav.practice')}
           </button>
         </Tooltip>
 
-        <Tooltip title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+        <Dropdown menu={{ items: languageItems, selectable: true, selectedKeys: [locale] }} placement="bottomRight" trigger={['click']}>
+          <Tooltip title={t('header.language')}>
+            <button className="flex items-center gap-1.5 rounded-full px-3 h-10 text-gray-600 hover:bg-gray-100 hover:text-black transition-colors cursor-pointer text-xs font-bold uppercase tracking-widest">
+              <GlobalOutlined className="text-base" />
+              {locale}
+            </button>
+          </Tooltip>
+        </Dropdown>
+
+        <Tooltip title={t('header.theme')}>
           <button
             onClick={() => setIsDark((v) => !v)}
             className="flex items-center justify-center rounded-full size-10 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors cursor-pointer"
@@ -145,7 +175,7 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
           </button>
         </Tooltip>
 
-        <Tooltip title="Help">
+        <Tooltip title={t('nav.help')}>
           <button
             onClick={() => navigate('/help')}
             className="flex items-center justify-center rounded-full size-10 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors cursor-pointer"
@@ -155,11 +185,13 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
         </Tooltip>
 
         <Dropdown menu={{ items: notificationItems }} placement="bottomRight" trigger={['click']}>
-          <button className="flex items-center justify-center rounded-full size-10 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors relative cursor-pointer">
-            <Badge count={notifications?.unread_count ?? 0} size="small">
-              <BellOutlined className="text-lg" />
-            </Badge>
-          </button>
+          <Tooltip title={t('header.notifications')}>
+            <button className="flex items-center justify-center rounded-full size-10 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors relative cursor-pointer">
+              <Badge count={notifications?.unread_count ?? 0} size="small">
+                <BellOutlined className="text-lg" />
+              </Badge>
+            </button>
+          </Tooltip>
         </Dropdown>
 
         <div className="h-8 w-px bg-gray-100 mx-1" />
@@ -174,10 +206,10 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
             </Avatar>
             <div className="text-left hidden sm:block">
               <p className="text-xs font-black text-gray-900 leading-none mb-1 truncate max-w-32">
-                {user ? `${user.name ?? ''} ${user.surname ?? ''}`.trim() || user.username || user.email : 'Student'}
+                {user ? `${user.name ?? ''} ${user.surname ?? ''}`.trim() || user.username || user.email : t('aiInterview.you')}
               </p>
               <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
-                {user?.userRole || 'Candidate'}
+                {user?.userRole || t('nav.account')}
               </p>
             </div>
           </button>

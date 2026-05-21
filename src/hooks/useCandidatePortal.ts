@@ -239,36 +239,25 @@ export const useStartSession = () => {
 
   return useMutation({
     mutationFn: async (practiceId: string) => {
-      const eligibility = await apiFetch<PracticeEligibility>(`/testing/practices/${practiceId}/eligibility`);
-
-      if (eligibility.can_resume && eligibility.session_id) {
-        return apiFetch<TestSessionProgress>(`/testing/sessions/${eligibility.session_id}`);
-      }
+      // No-resume policy: this hook only starts NEW sessions. If the
+      // user already has any session for the practice the backend will
+      // return 409 and the UI redirects to the report page; we do not
+      // silently resume.
+      const eligibility = await apiFetch<PracticeEligibility>(
+        `/testing/practices/${practiceId}/eligibility`,
+      );
 
       if (!eligibility.can_start) {
-        throw new ApiError(409, eligibility.reason ?? 'This assessment is not available.', eligibility);
+        throw new ApiError(
+          409,
+          eligibility.reason ?? 'This assessment is not available.',
+          eligibility,
+        );
       }
 
-      try {
-        return await apiFetch<TestSessionStart>(`/testing/practices/${practiceId}/sessions`, {
-          method: 'POST',
-        });
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 409) {
-          const detail = error.payload && typeof error.payload === 'object' && 'detail' in error.payload
-            ? (error.payload as { detail?: unknown }).detail
-            : null;
-          const sessionId = detail && typeof detail === 'object' && 'session_id' in detail
-            ? (detail as { session_id?: string }).session_id
-            : null;
-
-          if (sessionId) {
-            return apiFetch<TestSessionProgress>(`/testing/sessions/${sessionId}`);
-          }
-        }
-
-        throw error;
-      }
+      return apiFetch<TestSessionStart>(`/testing/practices/${practiceId}/sessions`, {
+        method: 'POST',
+      });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: portalKeys.practice(data.practice_id) });

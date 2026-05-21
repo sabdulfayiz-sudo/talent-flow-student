@@ -399,3 +399,54 @@ export interface PracticeNextQuestionResponse {
   event: 'practice_question' | 'exhausted';
   question: PracticeQuestion | null;
 }
+
+
+// ============================================================
+// AI Interview (OpenAI-backed text chat with grading).
+// Mirrors the schema returned by /candidate/portal/ai-interview/*.
+// ============================================================
+
+export interface AIInterviewMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export interface AIInterviewSkillBreakdown {
+  skill: string;
+  score: number;
+  comment: string;
+}
+
+export interface AIInterviewFeedback {
+  score: number | null;
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  skill_breakdown?: AIInterviewSkillBreakdown[];
+}
+
+export interface AIInterviewSession {
+  id: string;
+  role: string;
+  context: string | null;
+  status: 'active' | 'finished' | 'abandoned';
+  created_at: string;
+  finished_at: string | null;
+  final_score: number | null;
+  final_feedback: AIInterviewFeedback | null;
+  message_count: number;
+  messages?: AIInterviewMessage[];
+}
+
+export interface AIInterviewListResponse {
+  items: AIInterviewSession[];
+  configured: boolean;
+}
+
+export interface AIInterviewMessageResponse {
+  student_message: AIInterviewMessage;
+  interviewer_message: AIInterviewMessage;
+  session: AIInterviewSession;
+}
