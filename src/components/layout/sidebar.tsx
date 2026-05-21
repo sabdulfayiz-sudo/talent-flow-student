@@ -1,17 +1,20 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AppstoreOutlined,
   BulbOutlined,
+  CrownOutlined,
+  FileSearchOutlined,
   FileTextOutlined,
   QuestionCircleOutlined,
+  RobotOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
   ThunderboltFilled,
   TrophyOutlined,
   UserOutlined,
-  CrownOutlined,
 } from '@ant-design/icons';
+import { useI18n } from '../../i18n';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -24,24 +27,33 @@ type NavItem = {
   badge?: string;
 };
 
-const PRIMARY_ITEMS: NavItem[] = [
-  { label: 'Dashboard', icon: <AppstoreOutlined />, path: '/' },
-  { label: 'My assessments', icon: <FileTextOutlined />, path: '/my-assessments' },
-  { label: 'Practice lab', icon: <BulbOutlined />, path: '/practice', badge: 'New' },
-  { label: 'Leaderboard', icon: <CrownOutlined />, path: '/leaderboard' },
-  { label: 'Achievements', icon: <TrophyOutlined />, path: '/achievements' },
-  { label: 'Certificates', icon: <SafetyCertificateOutlined />, path: '/certificates' },
-  { label: 'My profile', icon: <UserOutlined />, path: '/profile' },
-];
-
-const SECONDARY_ITEMS: NavItem[] = [
-  { label: 'Help', icon: <QuestionCircleOutlined />, path: '/help' },
-  { label: 'Settings', icon: <SettingOutlined />, path: '/settings' },
-];
-
 const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useI18n();
+
+  const primaryItems: NavItem[] = useMemo(
+    () => [
+      { label: t('nav.dashboard'), icon: <AppstoreOutlined />, path: '/' },
+      { label: t('nav.assessments'), icon: <FileTextOutlined />, path: '/my-assessments' },
+      { label: t('nav.practice'), icon: <BulbOutlined />, path: '/practice', badge: 'New' },
+      { label: t('nav.aiInterview'), icon: <RobotOutlined />, path: '/ai-interview', badge: 'AI' },
+      { label: 'Resume', icon: <FileSearchOutlined />, path: '/resume-review' },
+      { label: t('nav.leaderboard'), icon: <CrownOutlined />, path: '/leaderboard' },
+      { label: t('nav.achievements'), icon: <TrophyOutlined />, path: '/achievements' },
+      { label: t('nav.certificates'), icon: <SafetyCertificateOutlined />, path: '/certificates' },
+      { label: t('nav.profile'), icon: <UserOutlined />, path: '/profile' },
+    ],
+    [t],
+  );
+
+  const secondaryItems: NavItem[] = useMemo(
+    () => [
+      { label: t('nav.help'), icon: <QuestionCircleOutlined />, path: '/help' },
+      { label: t('nav.settings'), icon: <SettingOutlined />, path: '/settings' },
+    ],
+    [t],
+  );
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
@@ -92,18 +104,18 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
             {!collapsed && (
               <div className="text-left animate-in fade-in duration-300">
                 <h1 className="text-gray-900 text-lg font-bold leading-tight tracking-tight whitespace-nowrap">
-                  Talent Flow AI
+                  {t('nav.appName')}
                 </h1>
-                <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">Student workspace</p>
+                <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">{t('nav.primary')}</p>
               </div>
             )}
           </button>
 
-          <nav className="space-y-1">{PRIMARY_ITEMS.map(renderItem)}</nav>
+          <nav className="space-y-1">{primaryItems.map(renderItem)}</nav>
         </div>
 
         <div className="space-y-2 pt-6 border-t border-gray-50">
-          {SECONDARY_ITEMS.map(renderItem)}
+          {secondaryItems.map(renderItem)}
         </div>
       </div>
     </aside>

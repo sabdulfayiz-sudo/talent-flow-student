@@ -63,26 +63,26 @@ src/
 | --- | --- |
 | `/` | Dashboard. Greeting + 4 animated stat cards, active assessments, recent activity, resume insights, skill analytics with traffic-light bars, weakest-category CTA into Practice, and a streak/momentum card. |
 | `/my-assessments` | All assignments with status filters. |
-| `/test/:practiceId` | Live test page with integrity gate, watermark, server timer, integrity score badge, and auto-submit on strike threshold. |
+| `/test/:practiceId` | Live test page. Fullscreen-on-start, one-chance copy, soft integrity warnings (no `preventDefault`), abandon-beacon on tab close / blur / fullscreen-exit, no resume after leaving. |
 | `/reports/:sessionId` | Per-session result. |
 | `/certificates` | Earned + pending certificates. |
 | `/profile` | Candidate profile editor. |
 | `/practice` | Untimed practice with category + difficulty filters. Reveals correct answers on demand. |
 | `/leaderboard` | Group or global ranking. Other students anonymized to initials. |
 | `/achievements` | Six derived badges (bronze/silver/gold) with progress bars + summary stats. |
-| `/help` | FAQ on integrity policy, adaptive difficulty, retakes, timer, integrity score. |
-| `/settings` | Theme (light/dark/system), notification toggles, sound, language. Persisted to `localStorage`. |
+| `/ai-interview` | AI mock interview. Text chat with GPT acting as interviewer; final score + skill breakdown on finish. |
+| `/resume-review` | Drag-and-drop PDF upload; AI-generated strengths / suggestions / overall score. |
+| `/help` | FAQ on integrity policy, adaptive difficulty, retakes, timer. |
+| `/settings` | Theme (light/dark/system), notification toggles, sound, language (EN / RU / UZ). Persisted to `localStorage`. |
 
-## Anti-Cheat
+## Test Integrity
 
-The test page wraps the question UI with a watermark and a `useAntiCheat` hook that:
+The test page wraps the question UI with a watermark and a `useAntiCheat` hook. The current policy is **soft warnings + irrevocable abandon**:
 
-- listens to `visibilitychange`, `blur`/`focus`, `copy`/`cut`/`paste`, `contextmenu`, `selectstart`, `dragstart`, `beforeunload`, `online`/`offline`, `fullscreenchange`;
-- blocks `Ctrl/Cmd` + `C/V/X/P/S/U`, `F12`, `Ctrl+Shift+I/J/C`, `PrintScreen`;
-- runs a devtools-open heuristic via `outerWidth-innerWidth` delta on a 2.5s interval;
-- detects external displays via `window.screen.isExtended` on a 5s interval;
-- batches events to `POST /testing/sessions/{id}/events` with severity `info`/`warn`/`critical`;
-- shows a local penalty score so the UI can warn before the backend flag, and auto-submits when the backend returns `finished: true` after the second strike.
+- The pre-test `IntegrityGate` modal forces fullscreen on start and tells the student: "You have one chance. If you leave this screen, the test ends."
+- `useAntiCheat` observes `visibilitychange`, `blur`/`focus`, `copy`/`cut`/`paste`, `contextmenu`, `selectstart`, `dragstart`, `beforeunload`, `online`/`offline`, `fullscreenchange`, plus keyboard shortcuts. It does **not** call `preventDefault` — it only logs each event to `POST /testing/sessions/{id}/events`.
+- `visibilitychange` / `blur` / fullscreen-exit / `pagehide` fire `POST /testing/sessions/{id}/abandon` via `navigator.sendBeacon` (with a `fetch({ keepalive: true })` fallback). The server marks the session finished. There is no resume CTA in the UI.
+- A devtools-open heuristic (`outerWidth - innerWidth` delta, 2.5s) and an external-display detector (`screen.isExtended`, 5s) both log `warn` events. No hard block.
 
 What this does NOT do (because no browser can):
 
@@ -90,7 +90,27 @@ What this does NOT do (because no browser can):
 - Block voice/audio cheating. Out of scope for a web app.
 - Detect remote desktop / screen-share. Out of scope.
 
-The pre-test `IntegrityGate` modal makes those limits explicit to the student so they know what's monitored before they start.
+## AI Features
+
+Both AI features call the backend (`/candidate/portal/ai-interview/*` and `/candidate/portal/resume-reviews`). The frontend never sees the OpenAI key — it lives in `OPENAI_API_KEY` on the server.
+
+- `/ai-interview` — TanStack-Query-backed chat. `useStartAIInterview` opens a session with a role and optional context; `useSendAIInterviewMessage` posts each candidate turn and renders the interviewer's reply; `useFinishAIInterview` grades the transcript and renders the final score, strengths, improvements, and per-skill breakdown.
+- `/resume-review` — drag-and-drop PDF upload calling `useUploadResumeReview`. The latest review is fetched with `useLatestResumeReview` and rendered with score, analysis, strengths, suggestions. When the API key is missing the backend gracefully falls back to a heuristic review.
+
+## Internationalization
+
+Lightweight, zero-dependency i18n built on a React context (`src/i18n/`):
+
+- Three locales: **EN**, **RU**, **UZ** (JSON files in `src/i18n/{en,ru,uz}.json`, ~500 keys each).
+- `useI18n()` exposes `locale`, `setLocale`, and `t(key, vars?)` with `dot.path` lookups and `{var}` interpolation.
+- Default locale is auto-detected from the browser, persisted to `localStorage` under `tf-lang`, and synced to `<html lang>` for accessibility.
+- Switcher in the header (globe icon) and in `/settings`. No `i18next` dependency added — the implementation is ~120 LOC.
+
+## Performance
+
+- Route-level code-splitting via `React.lazy` + `Suspense`. Only the dashboard and sign-in pages eager-load; everything else (reports, certificates, profile, AI interview, resume review, settings, …) is a separate chunk.
+- TanStack Query `staleTime` tuned on portal queries so the dashboard doesn't refetch on every nav.
+- Sidebar and header menus are `useMemo`'d so they don't rebuild on every render.
 
 ## Adaptive Difficulty
 

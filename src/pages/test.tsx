@@ -2,13 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
-  FullscreenExitOutlined,
   PlayCircleOutlined,
   SafetyCertificateOutlined,
   SendOutlined,
   WarningFilled,
 } from '@ant-design/icons';
-import { Progress, Spin, Tooltip, message } from 'antd';
+import { Modal, Progress, Spin, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   useNextQuestion,
@@ -22,9 +21,11 @@ import { useAntiCheat } from '../hooks/useAntiCheat';
 import { useAppSelector } from '../app/hooks';
 import IntegrityGate from '../components/test/integrityGate';
 import Watermark from '../components/test/watermark';
-import { HUMAN_LABELS } from '../types/integrity';
 import { apiFetch } from '../lib/api';
+import { useI18n } from '../i18n';
 import type { NextQuestionResponse, QuestionOption } from '../types/portal';
+
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 const normalizeOptions = (question?: NextQuestionResponse): QuestionOption[] => {
   if (!question?.options) return [];
@@ -49,33 +50,71 @@ const normalizeOptions = (question?: NextQuestionResponse): QuestionOption[] => 
 };
 
 const formatSeconds = (value?: number | null) => {
-  if (value === null || value === undefined) return 'No limit';
+  if (value === null || value === undefined) return '—';
   const minutes = Math.floor(value / 60);
   const seconds = value % 60;
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+};
+
+/**
+ * Fire the abandon beacon. Uses `navigator.sendBeacon` so the browser
+ * will still deliver it during `pagehide`/`beforeunload`, when a regular
+ * fetch is silently cancelled.
+ *
+ * The beacon API does not let us set headers, so we fall back to a
+ * `fetch` with `keepalive` if the auth token is required. (Most
+ * deployments accept the bearer header from sendBeacon's blob payload,
+ * but we go through fetch for correctness.)
+ */
+const fireAbandonBeacon = (sessionId: string) => {
+  const token = localStorage.getItem('token');
+  const url = `${API_URL}/testing/sessions/${sessionId}/abandon`;
+  try {
+    fetch(url, {
+      method: 'POST',
+      keepalive: true,
+      headers: token
+        ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+        : { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).catch(() => undefined);
+  } catch {
+    // ignore — best effort
+  }
 };
 
 const TestPage: React.FC = () => {
   const { practiceId } = useParams();
   const navigate = useNavigate();
   const { user } = useAppSelector((state) => state.auth);
+  const { t } = useI18n();
   const [sessionId, setSessionId] = useState<string | undefined>();
-  const [answerState, setAnswerState] = useState<{ questionId: string | null; answerId: string | null }>({
+  const [answerState, setAnswerState] = useState<{
+    questionId: string | null;
+    answerId: string | null;
+  }>({
     questionId: null,
     answerId: null,
   });
   const [gateOpen, setGateOpen] = useState(false);
+  const [exitOpen, setExitOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const questionStartedAtRef = useRef(0);
   const autoSubmittedRef = useRef(false);
+  const abandonFiredRef = useRef(false);
+
   const { data: practice, isLoading: practiceLoading } = usePracticeInfo(practiceId);
   const { data: eligibility, isLoading: eligibilityLoading } = usePracticeEligibility(practiceId);
-  const effectiveSessionId = sessionId ?? (eligibility?.can_resume ? eligibility.session_id ?? undefined : undefined);
+  const effectiveSessionId = sessionId;
   const startSession = useStartSession();
   const { data: progress } = useSessionProgress(effectiveSessionId);
-  const nextQuestion = useNextQuestion(effectiveSessionId && !progress?.is_finished ? effectiveSessionId : undefined);
+  const nextQuestion = useNextQuestion(
+    effectiveSessionId && !progress?.is_finished ? effectiveSessionId : undefined,
+  );
   const submitAnswer = useSubmitAnswer(effectiveSessionId);
   const options = useMemo(() => normalizeOptions(nextQuestion.data), [nextQuestion.data]);
-  const selectedAnswer = answerState.questionId === nextQuestion.data?.id ? answerState.answerId : null;
+  const selectedAnswer =
+    answerState.questionId === nextQuestion.data?.id ? answerState.answerId : null;
 
   const studentDisplayName = useMemo(() => {
     if (!user) return 'Student';
@@ -95,26 +134,43 @@ const TestPage: React.FC = () => {
     autoSubmittedRef.current = true;
     if (!effectiveSessionId) return;
     try {
-      await apiFetch(`/testing/sessions/${effectiveSessionId}/finish`, {
+      await apiFetch(`/testing/sessions/${effectiveSessionId}/abandon`, {
         method: 'POST',
       });
     } catch {
-      // Even if the finish call fails, redirecting away is the right UX —
-      // the server timer will still finalize the session if the user
-      // closes the tab.
+      // Network failure on abandon is fine — the eligibility endpoint
+      // auto-finishes any abandoned session on the next page load.
     }
-    message.warning('Your test was auto-submitted due to integrity violations.');
+    message.warning(t('test.exitConfirmBody'));
     navigate(`/reports/${effectiveSessionId}`, { replace: true });
-  }, [effectiveSessionId, navigate]);
+  }, [effectiveSessionId, navigate, t]);
 
-  const { penalty, warning, integrityScore, reportEvent, violations } = useAntiCheat({
+  // Soft toast on logged violations — replaces the giant penalty banner.
+  const handleViolationToast = useCallback(
+    (violation: { type: string }) => {
+      if (violation.type === 'copy_blocked' || violation.type === 'paste_blocked') {
+        setToast(t('test.copyWarn'));
+      } else if (violation.type === 'right_click_blocked') {
+        setToast(t('test.rightClickWarn'));
+      }
+    },
+    [t],
+  );
+
+  const { reportEvent } = useAntiCheat({
     sessionId: effectiveSessionId,
     enabled: isTestActive,
     onHardStop: handleAutoSubmit,
+    onViolation: handleViolationToast,
   });
 
+  // No-resume policy: if the backend says the user already attempted
+  // this practice, redirect to the report.
   useEffect(() => {
-    if (eligibility?.status === 'finished' && eligibility.session_id) {
+    if (
+      eligibility?.session_id &&
+      (eligibility.status === 'finished' || eligibility.status === 'already_attempted')
+    ) {
       navigate(`/reports/${eligibility.session_id}`, { replace: true });
     }
   }, [eligibility, navigate]);
@@ -128,24 +184,71 @@ const TestPage: React.FC = () => {
     }
   }, [nextQuestion.data, navigate, effectiveSessionId]);
 
+  // Abandon-beacon: any time the test is active and the user leaves
+  // (closes the tab, navigates away, switches windows, exits
+  // fullscreen) we fire `POST /sessions/{id}/abandon` so the backend
+  // immediately marks the session finished. Per the no-resume policy,
+  // this is intentional and irrevocable.
+  useEffect(() => {
+    if (!isTestActive || !effectiveSessionId) return;
+
+    const fire = () => {
+      if (abandonFiredRef.current) return;
+      abandonFiredRef.current = true;
+      fireAbandonBeacon(effectiveSessionId);
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) fire();
+    };
+    const onPageHide = () => {
+      fire();
+    };
+    const onBeforeUnload = () => {
+      fire();
+    };
+    const onFullscreenChange = () => {
+      // Exiting fullscreen during an active test is treated as leaving.
+      if (!document.fullscreenElement) {
+        fire();
+        // We still navigate the user to the report so they aren't
+        // staring at a half-broken page.
+        void handleAutoSubmit();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+    };
+  }, [isTestActive, effectiveSessionId, handleAutoSubmit]);
+
+  // Auto-dismiss soft toast after a beat so the test surface doesn't
+  // accumulate banners.
+  useEffect(() => {
+    if (!toast) return;
+    const handle = window.setTimeout(() => setToast(null), 2400);
+    return () => window.clearTimeout(handle);
+  }, [toast]);
+
   const handleStartClick = () => {
     if (!practiceId) return;
-    if (eligibility?.can_resume) {
-      // Resuming an in-flight session — skip the policy gate but still
-      // log an audit event.
-      void runStart({ requestFullscreen: false, resume: true });
-      return;
-    }
     setGateOpen(true);
   };
 
-  const runStart = async (opts: { requestFullscreen: boolean; resume?: boolean }) => {
+  const runStart = async (opts: { requestFullscreen: boolean }) => {
     if (!practiceId) return;
     try {
       const session = await startSession.mutateAsync(practiceId);
       setSessionId(session.session_id);
       setGateOpen(false);
-      reportEvent(opts.resume ? 'session_resumed' : 'policy_accepted', {
+      reportEvent('policy_accepted', {
         request_fullscreen: opts.requestFullscreen,
       });
       if (opts.requestFullscreen) {
@@ -155,9 +258,8 @@ const TestPage: React.FC = () => {
           reportEvent('fullscreen_request_denied');
         }
       }
-      message.success('Assessment ready.');
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Unable to start assessment.');
+      message.error(error instanceof Error ? error.message : t('errors.generic'));
     }
   };
 
@@ -167,7 +269,10 @@ const TestPage: React.FC = () => {
       const result = await submitAnswer.mutateAsync({
         question_id: nextQuestion.data.id,
         user_answer: selectedAnswer,
-        time_spent: Math.max(1, Math.round((Date.now() - questionStartedAtRef.current) / 1000)),
+        time_spent: Math.max(
+          1,
+          Math.round((Date.now() - questionStartedAtRef.current) / 1000),
+        ),
       });
 
       if (result.is_finished && effectiveSessionId) {
@@ -177,8 +282,23 @@ const TestPage: React.FC = () => {
 
       await nextQuestion.refetch();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Unable to submit answer.');
+      message.error(error instanceof Error ? error.message : t('errors.generic'));
     }
+  };
+
+  // Back / "leave" → confirm modal. Confirming calls /abandon and
+  // routes to the report.
+  const handleLeaveAttempt = () => {
+    if (!isTestActive) {
+      navigate('/my-assessments');
+      return;
+    }
+    setExitOpen(true);
+  };
+
+  const confirmExit = async () => {
+    setExitOpen(false);
+    await handleAutoSubmit();
   };
 
   if (practiceLoading || eligibilityLoading) {
@@ -190,73 +310,107 @@ const TestPage: React.FC = () => {
   }
 
   if (!practice) {
-    return <div className="bg-white rounded-3xl border border-rose-100 p-12 text-center text-rose-500">Assessment is unavailable.</div>;
+    return (
+      <div className="bg-white rounded-3xl border border-rose-100 p-12 text-center text-rose-500">
+        {t('test.unavailable')}
+      </div>
+    );
   }
 
-  const answered = progress?.answered_count ?? nextQuestion.data?.progress?.answered_count ?? 0;
+  const answered =
+    progress?.answered_count ?? nextQuestion.data?.progress?.answered_count ?? 0;
   const total = progress?.total_questions ?? practice.question_count;
   const percent = total ? Math.round((answered / total) * 100) : 0;
-  const isBlocked = eligibility && !eligibility.can_start && !eligibility.can_resume && eligibility.status !== 'finished';
-
-  const integrityTone = integrityScore >= 90 ? 'text-emerald-600 bg-emerald-50' : integrityScore >= 70 ? 'text-amber-600 bg-amber-50' : 'text-rose-600 bg-rose-50';
-  const recentViolations = violations.slice(-3).reverse();
+  const isBlocked =
+    eligibility &&
+    !eligibility.can_start &&
+    !eligibility.can_resume &&
+    eligibility.status !== 'finished' &&
+    eligibility.status !== 'already_attempted';
 
   if (!effectiveSessionId) {
     return (
       <div className="max-w-220 mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <button onClick={() => navigate('/my-assessments')} className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-black transition-colors cursor-pointer">
-          <ArrowLeftOutlined /> Back to assessments
+        <button
+          onClick={() => navigate('/my-assessments')}
+          className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-black transition-colors cursor-pointer"
+        >
+          <ArrowLeftOutlined /> {t('test.back')}
         </button>
 
         <section className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
             <div>
-              <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">{practice.tags.join(' / ') || 'Assessment'}</p>
-              <h1 className="text-4xl font-black tracking-tighter text-gray-900 mb-4">{practice.title}</h1>
-              <p className="text-gray-500 leading-relaxed max-w-180">{practice.description || 'You can start this assessment when ready.'}</p>
+              <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
+                {practice.tags.join(' / ') || t('nav.assessments')}
+              </p>
+              <h1 className="text-4xl font-black tracking-tighter text-gray-900 mb-4">
+                {practice.title}
+              </h1>
+              <p className="text-gray-500 leading-relaxed max-w-180">
+                {practice.description || ''}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3 min-w-64">
               <div className="rounded-3xl bg-gray-50 p-5">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Questions</p>
-                <p className="text-2xl font-black text-gray-900">{practice.question_count}</p>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                  {t('test.questions')}
+                </p>
+                <p className="text-2xl font-black text-gray-900">
+                  {practice.question_count}
+                </p>
               </div>
               <div className="rounded-3xl bg-gray-50 p-5">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Duration</p>
-                <p className="text-2xl font-black text-gray-900">{practice.duration_minutes}m</p>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                  {t('test.duration')}
+                </p>
+                <p className="text-2xl font-black text-gray-900">
+                  {practice.duration_minutes}m
+                </p>
               </div>
             </div>
           </div>
 
-          <div className="mt-8 rounded-2xl border border-blue-100 bg-blue-50 text-blue-700 p-4 flex items-start gap-3 text-sm">
+          <div className="mt-8 rounded-2xl border border-rose-100 bg-rose-50 text-rose-700 p-4 flex items-start gap-3 text-sm">
             <SafetyCertificateOutlined className="mt-0.5 text-lg" />
             <div className="space-y-1">
-              <p className="font-bold">Proctored session</p>
-              <p className="text-blue-700/80 leading-relaxed">
-                Tab switches, copy/paste, right-click and developer tools are
-                monitored. Questions and answer options are randomized per
-                attempt, and the next question adapts to your previous
-                answers.
+              <p className="font-bold">{t('test.oneChance')}</p>
+              <p className="text-rose-700/80 leading-relaxed">
+                {t('test.proctoredBody')}
               </p>
             </div>
           </div>
 
           {isBlocked && (
             <div className="mt-4 rounded-2xl bg-amber-50 text-amber-700 p-4 text-sm font-semibold">
-              {eligibility.reason ?? 'This assessment is not available.'}
+              {eligibility.reason ?? t('test.unavailable')}
+            </div>
+          )}
+          {eligibility?.status === 'already_attempted' && (
+            <div className="mt-4 rounded-2xl bg-rose-50 text-rose-700 p-4 text-sm font-semibold">
+              {t('test.alreadyAttempted')}
             </div>
           )}
 
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
             <button
               onClick={handleStartClick}
-              disabled={startSession.isPending || Boolean(isBlocked)}
+              disabled={
+                startSession.isPending ||
+                Boolean(isBlocked) ||
+                eligibility?.status === 'already_attempted' ||
+                eligibility?.status === 'finished'
+              }
               className="flex items-center justify-center gap-2 bg-black text-white px-6 py-3.5 rounded-2xl font-bold text-[13px] hover:bg-gray-800 transition-all shadow-lg shadow-black/10 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
             >
               <PlayCircleOutlined />
-              {eligibility?.can_resume ? 'Resume Assessment' : 'Start Assessment'}
+              {t('test.start')}
             </button>
-            <button onClick={() => navigate('/my-assessments')} className="px-6 py-3.5 rounded-2xl font-bold text-[13px] border border-gray-200 hover:bg-gray-50 transition-all cursor-pointer">
-              Later
+            <button
+              onClick={() => navigate('/my-assessments')}
+              className="px-6 py-3.5 rounded-2xl font-bold text-[13px] border border-gray-200 hover:bg-gray-50 transition-all cursor-pointer"
+            >
+              {t('test.later')}
             </button>
           </div>
         </section>
@@ -285,57 +439,49 @@ const TestPage: React.FC = () => {
   const timerLow = typeof secondsLeft === 'number' && secondsLeft <= 60;
 
   return (
-    <div className="relative max-w-240 mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 select-none">
+    <div className="relative max-w-240 mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <Watermark label={watermarkLabel} />
 
       <div className="relative z-20 flex items-center justify-between gap-4 flex-wrap">
-        <button onClick={() => navigate('/my-assessments')} className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-black transition-colors cursor-pointer">
-          <ArrowLeftOutlined /> Assessments
+        <button
+          onClick={handleLeaveAttempt}
+          className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-black transition-colors cursor-pointer"
+        >
+          <ArrowLeftOutlined /> {t('nav.assessments')}
         </button>
         <div className="flex items-center gap-3">
-          <Tooltip title={`Integrity score reflects logged anti-cheat events. ${violations.length} event(s) so far.`}>
-            <div className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black ${integrityTone}`}>
-              <SafetyCertificateOutlined /> Integrity {integrityScore}%
-            </div>
-          </Tooltip>
-          <div className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-black ${timerLow ? 'bg-rose-50 border-rose-200 text-rose-600 animate-pulse' : 'bg-white border-gray-100 text-gray-900'}`}>
+          <div className="flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black bg-rose-50 text-rose-600">
+            <SafetyCertificateOutlined /> {t('test.oneChance')}
+          </div>
+          <div
+            className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-black ${
+              timerLow
+                ? 'bg-rose-50 border-rose-200 text-rose-600 animate-pulse'
+                : 'bg-white border-gray-100 text-gray-900'
+            }`}
+          >
             <ClockCircleOutlined className={timerLow ? 'text-rose-500' : 'text-gray-400'} />
             {formatSeconds(secondsLeft)}
           </div>
         </div>
       </div>
 
-      {warning && (
-        <div className="relative z-20 rounded-2xl border border-rose-100 bg-rose-50 text-rose-700 p-4 flex items-start gap-3 text-sm">
-          <WarningFilled className="mt-0.5 text-lg" />
-          <div className="flex-1 font-semibold">{warning}</div>
-          <span className="text-xs font-black bg-white text-rose-700 px-2 py-1 rounded-full border border-rose-200">
-            penalty {penalty}
-          </span>
-        </div>
-      )}
-
-      {recentViolations.length > 0 && (
-        <div className="relative z-20 rounded-2xl border border-amber-100 bg-amber-50/60 p-4 text-xs text-amber-800 flex items-start gap-3">
-          <FullscreenExitOutlined className="mt-0.5 text-base" />
-          <div>
-            <p className="font-black uppercase tracking-widest mb-1">Recent integrity events</p>
-            <ul className="space-y-0.5">
-              {recentViolations.map((v) => (
-                <li key={v.id} className="font-semibold">
-                  · {HUMAN_LABELS[v.type] ?? v.type} ({v.severity})
-                </li>
-              ))}
-            </ul>
-          </div>
+      {toast && (
+        <div className="relative z-20 rounded-2xl border border-amber-100 bg-amber-50 text-amber-800 p-3 flex items-start gap-2 text-xs font-semibold">
+          <WarningFilled className="mt-0.5 text-base text-amber-500" />
+          <span>{toast}</span>
         </div>
       )}
 
       <section className="relative z-20 bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">{practice.title}</p>
-            <h1 className="text-2xl font-black text-gray-900">Question {answered + 1} of {total}</h1>
+            <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">
+              {practice.title}
+            </p>
+            <h1 className="text-2xl font-black text-gray-900">
+              {t('test.questionOf', { current: answered + 1, total })}
+            </h1>
           </div>
           <div className="md:min-w-80">
             <Progress percent={percent} showInfo={false} strokeColor="#111827" />
@@ -343,15 +489,24 @@ const TestPage: React.FC = () => {
         </div>
 
         <div className="rounded-3xl bg-gray-50 p-6 mb-6">
-          <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">{nextQuestion.data.category ?? 'General'}</p>
-          <h2 className="text-xl font-black text-gray-900 leading-relaxed">{nextQuestion.data.text}</h2>
+          <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
+            {nextQuestion.data.category ?? 'General'}
+          </p>
+          <h2 className="text-xl font-black text-gray-900 leading-relaxed">
+            {nextQuestion.data.text}
+          </h2>
         </div>
 
         <div className="grid grid-cols-1 gap-3">
           {options.map((option) => (
             <button
               key={option.id}
-              onClick={() => setAnswerState({ questionId: nextQuestion.data?.id ?? null, answerId: option.id })}
+              onClick={() =>
+                setAnswerState({
+                  questionId: nextQuestion.data?.id ?? null,
+                  answerId: option.id,
+                })
+              }
               className={`text-left rounded-2xl border p-5 font-semibold transition-all cursor-pointer ${
                 selectedAnswer === option.id
                   ? 'bg-black text-white border-black shadow-lg shadow-black/10'
@@ -364,17 +519,51 @@ const TestPage: React.FC = () => {
         </div>
 
         <div className="mt-8 flex flex-col-reverse sm:flex-row sm:justify-between sm:items-center gap-3">
-          <p className="text-[11px] text-gray-400">Adaptive difficulty — your next question depends on how you answer.</p>
+          <p className="text-[11px] text-gray-400">{t('test.adaptiveHint')}</p>
           <button
             onClick={handleSubmit}
             disabled={!selectedAnswer || submitAnswer.isPending}
             className="flex items-center justify-center gap-2 bg-black text-white px-6 py-3 rounded-2xl font-bold text-[13px] hover:bg-gray-800 transition-all shadow-lg shadow-black/10 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
-            {submitAnswer.isPending ? 'Submitting…' : 'Submit answer'}
+            {submitAnswer.isPending ? t('test.submitting') : t('test.submit')}
             <SendOutlined />
           </button>
         </div>
       </section>
+
+      <Modal
+        open={exitOpen}
+        onCancel={() => setExitOpen(false)}
+        centered
+        footer={null}
+        title={null}
+        destroyOnHidden
+      >
+        <div className="space-y-5 pt-1">
+          <h3 className="text-2xl font-black text-gray-900">
+            {t('test.exitConfirm')}
+          </h3>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            {t('test.exitConfirmBody')}
+          </p>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setExitOpen(false)}
+              className="px-5 py-3 rounded-2xl text-sm font-bold border border-gray-200 text-gray-700 hover:bg-gray-50 cursor-pointer"
+            >
+              {t('test.stay')}
+            </button>
+            <button
+              type="button"
+              onClick={confirmExit}
+              className="px-5 py-3 rounded-2xl text-sm font-bold bg-rose-600 text-white hover:bg-rose-700 cursor-pointer"
+            >
+              {t('test.exit')}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
