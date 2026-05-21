@@ -13,7 +13,6 @@ const MainLayout: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
-  console.log('suer', user);
   
   const handleLogout = () => {
     dispatch(logout());

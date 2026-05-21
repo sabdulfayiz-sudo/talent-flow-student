@@ -8,6 +8,9 @@ import { initializeAuth } from './features/auth/authSlice';
 import SignIn from './pages/signIn';
 import AssessmentsPage from './pages/assessments';
 import ProfilePage from './pages/profilePage';
+import CertificatesPage from './pages/certificates';
+import ReportPage from './pages/report';
+import TestPage from './pages/test';
 
 const App: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -26,8 +29,10 @@ const App: React.FC = () => {
         <Route element={<MainLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/my-assessments" element={<AssessmentsPage />} />
-          {/* <Route path="/candidates" element={<Dashboard />} />
-          <Route path="/certificates" element={<Dashboard />} />  */}
+          <Route path="/test/:practiceId" element={<TestPage />} />
+          <Route path="/reports/:sessionId" element={<ReportPage />} />
+          <Route path="/result/:sessionId" element={<ReportPage />} />
+          <Route path="/certificates" element={<CertificatesPage />} />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
       </Route>
