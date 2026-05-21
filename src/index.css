@@ -5,3 +5,24 @@ body {
   margin: 0;
   padding: 0;
 }
+
+@keyframes tf-card-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tf-card-pop {
+  animation: tf-card-pop 420ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tf-card-pop {
+    animation: none;
+  }
+}

@@ -1,151 +1,244 @@
-import React, { useState } from 'react';
-import { useUser } from '../hooks/useUser';
-import { 
-  LockFilled, 
-  InfoCircleOutlined, 
-  LinkedinFilled, 
-  CheckCircleFilled, 
-  ThunderboltFilled, 
-  UserOutlined
+import React, { useEffect, useState } from 'react';
+import {
+  CheckCircleFilled,
+  EditOutlined,
+  EnvironmentOutlined,
+  LinkOutlined,
+  MailOutlined,
+  PhoneOutlined,
+  ShareAltOutlined,
+  ThunderboltFilled,
+  UserOutlined,
 } from '@ant-design/icons';
-import { Avatar } from 'antd';
+import { Avatar, Form, Input, Modal, Progress, Switch, message } from 'antd';
+import { apiFetch } from '../lib/api';
+import { useAIProfile, useAnalytics, useUpdateAIProfile } from '../hooks/useCandidatePortal';
+import type { ProfileUpdatePayload } from '../types/portal';
+
+interface SharePayload {
+  share_url: string;
+}
 
 const ProfilePage: React.FC = () => {
-  const { data: user, isLoading } = useUser();
-  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const { data, isLoading, isError } = useAIProfile();
+  const { data: analytics } = useAnalytics();
+  const updateProfile = useUpdateAIProfile();
+  const [isEditing, setIsEditing] = useState(false);
+  const [form] = Form.useForm<ProfileUpdatePayload>();
 
-  if (isLoading || !user) return <div className="p-20 text-center animate-pulse">Loading Profile...</div>;
+  useEffect(() => {
+    if (data) {
+      form.setFieldsValue({
+        headline: data.profile.headline,
+        location: data.profile.location ?? '',
+        university: data.profile.university ?? '',
+        graduation_year: data.profile.graduation_year ?? '',
+        phone: data.contact.phone ?? '',
+        portfolio_url: data.contact.portfolio_url ?? '',
+        linkedin_url: data.contact.linkedin_url ?? '',
+        open_to_work: data.profile.open_to_work,
+      });
+    }
+  }, [data, form]);
+
+  const handleShare = async () => {
+    try {
+      const payload = await apiFetch<SharePayload>('/candidate/portal/profile/share');
+      const url = `${window.location.origin}${payload.share_url}`;
+      await navigator.clipboard.writeText(url);
+      message.success('Profile link copied.');
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'Unable to create share link.');
+    }
+  };
+
+  const handleSave = async (values: ProfileUpdatePayload) => {
+    try {
+      await updateProfile.mutateAsync(values);
+      setIsEditing(false);
+      message.success('Profile updated.');
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'Unable to update profile.');
+    }
+  };
+
+  if (isLoading) {
+    return <div className="p-20 text-center text-gray-400 animate-pulse">Loading profile...</div>;
+  }
+
+  if (isError || !data) {
+    return <div className="bg-white rounded-3xl border border-rose-100 p-12 text-center text-rose-500">Profile is unavailable.</div>;
+  }
 
   return (
-    <div className="min-h-screen bg-background-light dark:bg-background-dark p-6 lg:p-10 transition-colors">
-      
-      {/* Premium Modal */}
-      {showPremiumModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-surface-dark rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-800 animate-in zoom-in-95 duration-200">
-            <div className="size-16 bg-blue-50 dark:bg-blue-900/30 rounded-2xl flex items-center justify-center text-primary mb-6">
-              <ThunderboltFilled className="text-3xl" />
+    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <section className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1.5 bg-black" />
+        <div className="flex flex-col lg:flex-row items-center gap-8">
+          <div className="size-28 rounded-full border-4 border-white shadow-xl overflow-hidden bg-gray-50">
+            <Avatar
+              className="w-full h-full bg-gray-100 border border-gray-200"
+              icon={<UserOutlined className="text-gray-400" />}
+              size={106}
+            >
+              {data.profile.avatar_initials}
+            </Avatar>
+          </div>
+
+          <div className="flex-1 text-center lg:text-left">
+            <div className="flex flex-col lg:flex-row items-center gap-3 mb-2">
+              <h1 className="text-3xl font-black text-gray-900">{data.profile.full_name}</h1>
+              {data.profile.open_to_work && (
+                <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase rounded-full border border-emerald-100">
+                  Open to Work
+                </span>
+              )}
             </div>
-            <h2 className="text-2xl font-black mb-2 dark:text-white">Unlock Premium Features</h2>
-            <p className="text-text-secondary my-2">LinkedIn optimization and AI-driven career roadmaps are available exclusively for Pro members.</p>
-            <div>
-              <button className=" cursor-pointer w-full py-3 font-bold rounded-xl transition-all">Upgrade Now</button>
-              <button onClick={() => setShowPremiumModal(false)} className="cursor-pointer w-full text-gray-400 font-semibold hover:text-gray-600 transition-all">Maybe Later</button>
+            <p className="text-gray-500 text-lg mb-4">{data.profile.headline}</p>
+            <div className="flex flex-wrap justify-center lg:justify-start gap-4 text-sm text-gray-400 font-medium">
+              {data.profile.location && <span className="flex items-center gap-1.5"><EnvironmentOutlined /> {data.profile.location}</span>}
+              {data.contact.email && <span className="flex items-center gap-1.5"><MailOutlined /> {data.contact.email}</span>}
+              {data.contact.phone && <span className="flex items-center gap-1.5"><PhoneOutlined /> {data.contact.phone}</span>}
             </div>
           </div>
-        </div>
-      )}
 
-      <div className="max-w-300 mx-auto space-y-8">
-        
-        {/* Profile Hero */}
-        <section className="bg-surface-light dark:bg-surface-dark rounded-3xl p-8 border border-gray-100 dark:border-gray-800 shadow-sm relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1.5 bg-linear-to-r from-primary to-nexus-purple" />
-          <div className="flex flex-col md:flex-row items-center gap-8">
-            <div className="size-28 rounded-full border-4 border-white dark:border-gray-700 shadow-xl overflow-hidden bg-gray-50">
-              <Avatar 
-                className="w-full cursor-pointer bg-gray-100 border border-gray-200 shadow-sm"
-                icon={<UserOutlined className="text-gray-400" />}
-                size={106}
-              />
-            </div>
-            <div className="flex-1 text-center md:text-left">
-              <div className="flex flex-col md:flex-row items-center gap-3 mb-2">
-                <h1 className="text-3xl font-black dark:text-white">{user.name} {user.surname}</h1>
-                <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase rounded-full border border-emerald-100">Open to Work</span>
-              </div>
-              <p className="text-text-secondary text-lg mb-4">Full Stack Developer • {user.age} Years Old</p>
-              <div className="flex flex-wrap justify-center md:justify-start gap-4 text-sm text-gray-400 font-medium">
-                <span className="flex items-center gap-1.5"><InfoCircleOutlined /> {user.email}</span>
-                <span className="flex items-center gap-1.5 text-primary">@ {user.username}</span>
-              </div>
-            </div>
-            
-            {/* LinkedIn Surgeon Button (Protected) */}
-            <button 
-              onClick={() => setShowPremiumModal(true)}
-              className="flex items-center gap-3 px-6 py-4 bg-[#0a66c2] text-white font-bold rounded-2xl hover:bg-[#004182] transition-all shadow-lg shadow-blue-500/20"
+          <div className="flex flex-col sm:flex-row lg:flex-col gap-3 w-full sm:w-auto">
+            <button
+              onClick={() => setIsEditing(true)}
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-black text-white font-bold rounded-2xl hover:bg-gray-800 transition-all shadow-lg shadow-black/10 cursor-pointer"
             >
-              <LinkedinFilled className="text-xl" />
-              Optimize via LinkedIn
-              <LockFilled className="text-xs opacity-50" />
+              <EditOutlined /> Edit Profile
             </button>
+            <button
+              onClick={handleShare}
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-white text-gray-900 font-bold rounded-2xl border border-gray-200 hover:bg-gray-50 transition-all cursor-pointer"
+            >
+              <ShareAltOutlined /> Share
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+        <section className="xl:col-span-4 bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-lg font-black text-gray-900">Profile Strength</h3>
+            <span className="text-3xl font-black tracking-tighter">{data.profile_strength.score}</span>
+          </div>
+          <Progress percent={data.profile_strength.score} strokeColor="#111827" showInfo={false} />
+          <p className="text-sm text-gray-500 leading-relaxed mt-5">{data.profile_strength.label}</p>
+
+          <div className="mt-8 pt-8 border-t border-gray-100 space-y-4">
+            {[
+              { label: 'Completed assessments', value: analytics?.overview.completed_assessments ?? 0 },
+              { label: 'Average score', value: `${analytics?.overview.average_score ?? 0}%` },
+              { label: 'Best score', value: `${analytics?.overview.best_score ?? 0}%` },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center justify-between text-sm">
+                <span className="text-gray-500">{item.label}</span>
+                <span className="font-black text-gray-900">{item.value}</span>
+              </div>
+            ))}
           </div>
         </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* AI Review Section (Blurred) */}
-          <div className="lg:col-span-7 group relative">
-            <PremiumOverlay message="Pro Resume Analysis" onAction={() => setShowPremiumModal(true)} />
-            <div className="bg-surface-light dark:bg-surface-dark rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden blur-xs group-hover:blur-[6px] transition-all pointer-events-none select-none">
-              <div className="p-6 border-b border-gray-50 dark:border-gray-800">
-                <h3 className="text-lg font-bold dark:text-white flex items-center gap-2">
-                   NEXUS AI Professional Review
-                </h3>
-              </div>
-              <div className="p-8 space-y-8">
-                <MockReviewItem icon="check" title="Frontend Architecture" color="text-emerald-500" />
-                <MockReviewItem icon="warning" title="Query Optimization" color="text-amber-500" />
-                <MockReviewItem icon="message" title="Communication Pattern" color="text-blue-500" />
-              </div>
+        <section className="xl:col-span-5 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-gray-100 flex items-center gap-3">
+            <div className="size-11 rounded-2xl bg-gray-900 text-white flex items-center justify-center">
+              <ThunderboltFilled />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-gray-900">{data.ai_review.title}</h3>
+              <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">
+                Updated {new Date(data.ai_review.updated_at).toLocaleDateString()}
+              </p>
             </div>
           </div>
 
-          {/* Career Roadmap (Blurred) */}
-          <div className="lg:col-span-5 group relative">
-            <PremiumOverlay message="Unlock Your Career Path" onAction={() => setShowPremiumModal(true)} />
-            <div className="bg-surface-light dark:bg-surface-dark rounded-3xl p-8 border border-gray-100 dark:border-gray-800 shadow-sm blur-xs group-hover:blur-[6px] transition-all pointer-events-none select-none">
-              <h3 className="text-lg font-bold mb-8 dark:text-white">Career Roadmap</h3>
-              <div className="space-y-8 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-100 dark:before:bg-gray-800">
-                <MockRoadmapStep title="Frontend Certification" active />
-                <MockRoadmapStep title="Full Stack Mastery" />
-                <MockRoadmapStep title="Senior Systems Architect" />
-              </div>
-            </div>
+          <div className="p-8 space-y-7">
+            {data.ai_review.insights.map((item, index) => (
+              <article key={item.title} className="tf-card-pop flex gap-4" style={{ animationDelay: `${index * 80}ms` }}>
+                <div className="size-10 rounded-2xl bg-gray-50 flex items-center justify-center text-gray-900 shrink-0">
+                  <CheckCircleFilled />
+                </div>
+                <div>
+                  <h4 className="font-black text-gray-900 mb-1">{item.title}</h4>
+                  <p className="text-sm text-gray-500 leading-relaxed">{item.body}</p>
+                </div>
+              </article>
+            ))}
           </div>
+        </section>
 
-        </div>
+        <aside className="xl:col-span-3 space-y-8">
+          <section className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
+            <h3 className="text-lg font-black text-gray-900 mb-6">Career Roadmap</h3>
+            <div className="space-y-6 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-100">
+              {data.career_roadmap.map((step) => (
+                <div key={step.title} className="flex gap-4 pl-6 relative">
+                  <div className={`absolute left-0 size-4 rounded-full border-4 border-white ${step.status === 'achieved' ? 'bg-emerald-500' : step.status === 'missing' ? 'bg-orange-400' : 'bg-blue-500'}`} />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-black text-gray-900">{step.title}</h4>
+                    <p className="text-xs text-gray-400 mt-1">{step.subtitle}</p>
+                    {step.progress > 0 && <Progress percent={step.progress} showInfo={false} size="small" className="mt-2" strokeColor="#111827" />}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="bg-[#0a66c2] rounded-3xl p-8 shadow-sm text-white overflow-hidden relative">
+            <LinkOutlined className="absolute right-6 top-6 text-6xl opacity-10" />
+            <h3 className="text-lg font-black mb-3">LinkedIn Optimization</h3>
+            <p className="text-sm text-white/80 leading-relaxed mb-5">{data.linkedin_optimization.suggested_headline}</p>
+            <div className="space-y-2">
+              {data.linkedin_optimization.recommendations.slice(0, 3).map((item) => (
+                <p key={item} className="text-xs font-semibold text-white/90">- {item}</p>
+              ))}
+            </div>
+          </section>
+        </aside>
       </div>
+
+      <Modal
+        title="Edit profile"
+        open={isEditing}
+        onCancel={() => setIsEditing(false)}
+        onOk={() => form.submit()}
+        confirmLoading={updateProfile.isPending}
+        okText="Save"
+      >
+        <Form form={form} layout="vertical" onFinish={handleSave} className="pt-4">
+          <Form.Item name="headline" label="Headline">
+            <Input maxLength={150} />
+          </Form.Item>
+          <Form.Item name="location" label="Location">
+            <Input maxLength={100} />
+          </Form.Item>
+          <div className="grid grid-cols-2 gap-3">
+            <Form.Item name="university" label="University">
+              <Input maxLength={150} />
+            </Form.Item>
+            <Form.Item name="graduation_year" label="Graduation year">
+              <Input maxLength={10} />
+            </Form.Item>
+          </div>
+          <Form.Item name="phone" label="Phone">
+            <Input maxLength={30} />
+          </Form.Item>
+          <Form.Item name="portfolio_url" label="Portfolio URL">
+            <Input maxLength={255} />
+          </Form.Item>
+          <Form.Item name="linkedin_url" label="LinkedIn URL">
+            <Input maxLength={255} />
+          </Form.Item>
+          <Form.Item name="open_to_work" label="Open to work" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };
-
-// --- Helper Components ---
-
-const PremiumOverlay = ({ message, onAction }: { message: string, onAction: () => void }) => (
-  <div 
-    onClick={onAction}
-    className="absolute inset-0 z-10 flex flex-col items-center justify-center cursor-pointer group/overlay transition-all"
-  >
-    <div className="bg-white/90 dark:bg-surface-dark/90 px-6 py-4 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 transform group-hover/overlay:scale-110 transition-transform">
-      <LockFilled className="text-primary text-xl" />
-      <span className="font-black text-sm uppercase tracking-widest dark:text-white text-center">{message}</span>
-      <p className="text-[10px] font-bold text-primary animate-pulse uppercase">Click to Upgrade</p>
-    </div>
-  </div>
-);
-
-const MockReviewItem = ({ color }: { title: string, icon: string, color: string }) => (
-  <div className="flex gap-4 opacity-40">
-    <div className={`size-10 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center ${color}`}>
-       <CheckCircleFilled />
-    </div>
-    <div className="flex-1">
-      <div className="h-4 w-32 bg-gray-200 dark:bg-gray-800 rounded mb-2" />
-      <div className="h-3 w-full bg-gray-100 dark:bg-gray-800 rounded" />
-    </div>
-  </div>
-);
-
-const MockRoadmapStep = ({ title, active = false }: { title: string, active?: boolean }) => (
-  <div className="flex gap-4 pl-6 opacity-30">
-    <div className={`absolute left-0 size-4 rounded-full border-4 border-white dark:border-surface-dark ${active ? 'bg-primary' : 'bg-gray-200'}`} />
-    <div className="flex-1">
-       <h4 className="text-sm font-bold">{title}</h4>
-       <div className="h-2 w-full bg-gray-100 dark:bg-gray-800 rounded mt-2" />
-    </div>
-  </div>
-);
 
 export default ProfilePage;

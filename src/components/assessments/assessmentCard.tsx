@@ -1,90 +1,111 @@
 import React from 'react';
-import { CalendarOutlined, ArrowRightOutlined, CheckCircleFilled, EyeOutlined, CloseCircleFilled } from '@ant-design/icons';
+import {
+  ArrowRightOutlined,
+  CalendarOutlined,
+  CheckCircleFilled,
+  ClockCircleOutlined,
+  EyeOutlined,
+  LockOutlined,
+  PlayCircleOutlined,
+} from '@ant-design/icons';
 import { Progress, Tag } from 'antd';
-import type { AssessmentItem } from '../../types/assessments';
-import { useNavigate } from 'react-router-dom';
+import type { PortalAssessment } from '../../types/portal';
 
 interface AssessmentCardProps {
-  item: AssessmentItem;
-  onAction: (url: string) => void;
+  item: PortalAssessment;
+  onAction: (item: PortalAssessment) => void;
 }
 
-const AssessmentCard: React.FC<AssessmentCardProps> = ({ item, onAction }) => {
-  const { testId, title, createdBy, createdAt, status, statusLabel, score, actionUrl } = item;
-  const navigate = useNavigate();
-  const isActive = status === 'Active';
-  const isCompleted = status === 'Completed';
-  const isFailed = statusLabel?.toLowerCase() === 'failed';
+const toneClass: Record<string, string> = {
+  danger: 'bg-rose-50 text-rose-600',
+  success: 'bg-emerald-50 text-emerald-600',
+  warning: 'bg-amber-50 text-amber-600',
+  neutral: 'bg-gray-100 text-gray-600',
+  muted: 'bg-gray-100 text-gray-400',
+};
 
-  // Format the date for better readability
-  const formattedDate = new Date(createdAt).toLocaleDateString('en-US', {
+const actionIcon = (status: PortalAssessment['status']) => {
+  if (status === 'completed') return <EyeOutlined />;
+  if (status === 'locked') return <LockOutlined />;
+  if (status === 'draft') return <PlayCircleOutlined />;
+  return <ArrowRightOutlined className="text-xs group-hover:translate-x-1 transition-transform" />;
+};
+
+const formatDate = (value?: string | null) => {
+  if (!value) return 'No date';
+  return new Date(value).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
-    year: 'numeric'
+    year: 'numeric',
   });
+};
+
+const AssessmentCard: React.FC<AssessmentCardProps> = ({ item, onAction }) => {
+  const isActive = item.status === 'active';
+  const isCompleted = item.status === 'completed';
+  const disabled = !item.cta_url && item.status !== 'active';
 
   return (
-    <article className={`bg-white rounded-2xl border ${isActive ? 'border-blue-100 shadow-blue-500/5' : 'border-gray-100'} p-6 shadow-sm hover:shadow-md transition-all flex flex-col h-full relative overflow-hidden group`}>
-      {isActive && <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500" />}
-      
-      <div className="flex justify-between items-start mb-5">
+    <article className={`tf-card-pop bg-white rounded-3xl border ${isActive ? 'border-blue-100 shadow-blue-500/5' : 'border-gray-100'} p-6 shadow-sm hover:shadow-md transition-all flex flex-col h-full relative overflow-hidden group`}>
+      {isActive && <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600" />}
+
+      <div className="flex justify-between items-start gap-3 mb-5">
         <Tag className="m-0! border-0! bg-gray-50! text-gray-500! font-bold uppercase text-[10px] tracking-wider px-2 py-0.5">
-          {isActive ? 'Technical' : 'Result'}
+          {item.category || 'Assessment'}
         </Tag>
-        
-        <span className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full ${
-          isActive ? 'bg-blue-50 text-blue-600' : 
-          isFailed ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
-        }`}>
-          {isActive ? <span className="size-1.5 rounded-full bg-blue-500 animate-pulse" /> : 
-           isFailed ? <CloseCircleFilled /> : <CheckCircleFilled />}
-          {statusLabel || status}
+
+        <span className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full ${toneClass[item.status_tone] ?? 'bg-gray-100 text-gray-600'}`}>
+          {isCompleted ? <CheckCircleFilled /> : <span className={`size-1.5 rounded-full ${isActive ? 'bg-blue-500 animate-pulse' : 'bg-current'}`} />}
+          {item.status_label}
         </span>
       </div>
 
       <div className="mb-6 flex-1">
-        <h3 className="text-lg font-bold text-gray-900 mb-1 leading-tight group-hover:text-blue-600 transition-colors">
-          {title}
+        <h3 className="text-lg font-bold text-gray-900 mb-2 leading-tight group-hover:text-blue-600 transition-colors">
+          {item.title}
         </h3>
-        <p className="text-xs text-gray-400 mb-4">By {createdBy}</p>
-        
-        {isCompleted && score !== undefined && (
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex-1">
-              <Progress 
-                percent={score} 
-                showInfo={false} 
-                strokeColor={isFailed ? "#ef4444" : "#10b981"} 
-                size="small" 
-              />
-            </div>
-            <span className={`text-xs font-black ${isFailed ? 'text-red-600' : 'text-emerald-600'}`}>
-              {score}%
+        <p className="text-sm text-gray-500 leading-relaxed line-clamp-3">
+          {item.description || `${item.question_count} questions prepared for this assessment.`}
+        </p>
+
+        {(isCompleted || item.status === 'draft') && item.progress !== null && (
+          <div className="flex items-center gap-3 mt-5">
+            <Progress
+              percent={item.progress}
+              showInfo={false}
+              strokeColor={isCompleted ? '#10b981' : '#2563eb'}
+              trailColor="#f3f4f6"
+              size="small"
+              className="flex-1"
+            />
+            <span className={`text-xs font-black ${isCompleted ? 'text-emerald-600' : 'text-blue-600'}`}>
+              {item.progress}%
             </span>
           </div>
         )}
       </div>
 
       <div className="mt-auto">
-        <div className="flex items-center gap-4 text-[11px] font-bold text-gray-400 mb-6 pt-4 border-t border-gray-50">
+        <div className="grid grid-cols-2 gap-3 text-[11px] font-bold text-gray-400 mb-6 pt-4 border-t border-gray-50">
           <div className="flex items-center gap-1.5">
-            <CalendarOutlined /> {formattedDate}
+            <ClockCircleOutlined /> {item.duration_minutes || 0} mins
+          </div>
+          <div className="flex items-center gap-1.5 justify-end">
+            <CalendarOutlined /> {formatDate(item.deadline ?? item.completed_at ?? item.assigned_at)}
           </div>
         </div>
 
-        <button 
-          onClick={() => onAction(actionUrl)}
-          className={`w-full py-3 text-[13px] font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${
-            isActive 
-              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20' 
+        <button
+          disabled={disabled}
+          onClick={() => onAction(item)}
+          className={`w-full py-3 text-[13px] font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+            isActive || item.status === 'draft'
+              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20'
               : 'bg-white border border-gray-200 text-gray-900 hover:bg-gray-50'
           }`}
         >
-          {isActive ? (
-            <p onClick={()=> navigate(`/test/${testId}`)}>Start Assessment <ArrowRightOutlined className="text-xs group-hover:translate-x-1 transition-transform" /></p>
-          ) : (
-            <p onClick={()=> navigate(`/result/${testId}`)}> <EyeOutlined /> View Report </p>
-          )}
+          {actionIcon(item.status)}
+          {item.cta_label}
         </button>
       </div>
     </article>

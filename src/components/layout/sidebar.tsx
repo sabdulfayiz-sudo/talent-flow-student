@@ -84,7 +84,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   AppstoreOutlined, 
   FileTextOutlined, 
-  TeamOutlined, 
   SafetyCertificateOutlined, 
   UserOutlined,
   SettingOutlined,
@@ -103,7 +102,6 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
   const navItems = [
     { label: 'Dashboard', icon: <AppstoreOutlined />, path: '/' },
     { label: 'My assessments', icon: <FileTextOutlined />, path: '/my-assessments' },
-    { label: 'Candidates', icon: <TeamOutlined />, path: '/candidates' },
     { label: 'Certificates', icon: <SafetyCertificateOutlined />, path: '/certificates' },
     { label: 'My profile', icon: <UserOutlined />, path: '/profile' },
   ];
@@ -128,7 +126,9 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
           <nav className="space-y-1">
             {navItems.map((item) => {
               // Determine if the current item is active based on the URL path
-              const isActive = location.pathname === item.path;
+              const isActive = item.path === '/'
+                ? location.pathname === '/'
+                : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
 
               return (
                 <button
