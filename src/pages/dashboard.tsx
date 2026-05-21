@@ -1,7 +1,9 @@
 import React, { useRef } from 'react';
 import {
   BarChartOutlined,
+  BulbOutlined,
   FilePdfOutlined,
+  FireFilled,
   RightOutlined,
   SafetyCertificateOutlined,
   ThunderboltOutlined,
@@ -11,6 +13,7 @@ import {
 import { Progress, Spin, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import AssessmentCard from '../components/assessments/assessmentCard';
+import AnimatedNumber from '../components/common/animatedNumber';
 import { useAnalytics, useDashboard, useUploadResumeReview } from '../hooks/useCandidatePortal';
 import type { PortalAssessment } from '../types/portal';
 
@@ -84,6 +87,8 @@ const Dashboard: React.FC = () => {
     );
   }
 
+  const weakest = (analytics?.categories ?? []).slice().sort((a, b) => a.score - b.score)[0];
+
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
@@ -116,15 +121,16 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {statCards.map((card, index) => {
           const value = data.stats[card.key] ?? 0;
+          const suffix = 'suffix' in card ? card.suffix : '';
 
           return (
-            <section key={card.key} className="tf-card-pop bg-white rounded-3xl border border-gray-100 p-6 shadow-sm" style={{ animationDelay: `${index * 60}ms` }}>
+            <section key={card.key} className="tf-card-pop bg-white rounded-3xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-shadow" style={{ animationDelay: `${index * 60}ms` }}>
               <div className="flex items-center justify-between mb-5">
                 <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">{card.label}</p>
                 <span className="text-gray-400 text-lg">{card.icon}</span>
               </div>
               <p className="text-3xl font-black tracking-tighter text-gray-900">
-                {value}{'suffix' in card ? card.suffix : ''}
+                <AnimatedNumber value={value as number} suffix={suffix} />
               </p>
             </section>
           );
@@ -250,11 +256,45 @@ const Dashboard: React.FC = () => {
                     <span className="text-gray-600">{category.category}</span>
                     <span className="text-gray-900">{category.score}%</span>
                   </div>
-                  <Progress percent={category.score} showInfo={false} size="small" strokeColor="#111827" />
+                  <Progress percent={category.score} showInfo={false} size="small" strokeColor={category.score < 60 ? '#f43f5e' : category.score < 80 ? '#f59e0b' : '#10b981'} />
                 </div>
               ))}
               {!analytics?.categories.length && <p className="text-sm text-gray-400">Complete assessments to unlock analytics.</p>}
             </div>
+            {weakest ? (
+              <button
+                onClick={() => navigate('/practice')}
+                className="mt-6 w-full flex items-center justify-between gap-3 rounded-2xl bg-rose-50 hover:bg-rose-100 px-4 py-3 text-left transition-colors cursor-pointer"
+              >
+                <span>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-600">Weakest area</p>
+                  <p className="text-sm font-black text-gray-900">{weakest.category} · {weakest.score}%</p>
+                  <p className="text-[11px] text-gray-500">Drill it in the Practice Lab.</p>
+                </span>
+                <BulbOutlined className="text-rose-500 text-lg" />
+              </button>
+            ) : null}
+          </section>
+
+          <section className="bg-gradient-to-br from-amber-50 to-rose-50 rounded-3xl border border-amber-100 p-7">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="size-11 rounded-2xl bg-white text-rose-500 flex items-center justify-center text-xl shadow-sm">
+                <FireFilled />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-600">Streak</p>
+                <h3 className="text-lg font-black text-gray-900">{Math.max(1, data.stats.completed_assessments ?? 0)} day momentum</h3>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed mb-4">
+              You've completed {data.stats.completed_assessments ?? 0} assessments so far. Keep the streak alive — finish one more this week to unlock the next badge.
+            </p>
+            <button
+              onClick={() => navigate('/achievements')}
+              className="text-xs font-black uppercase tracking-widest text-rose-600 hover:text-rose-700 cursor-pointer"
+            >
+              View achievements →
+            </button>
           </section>
 
           <section className="bg-white rounded-3xl border border-gray-100 p-7 shadow-sm">
