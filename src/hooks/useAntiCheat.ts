@@ -24,6 +24,10 @@ export interface IntegrityViolation {
 export interface UseAntiCheatOptions {
   sessionId?: string;
   enabled: boolean;
+  // When true (default), copy/paste/right-click/keyboard shortcuts call
+  // `preventDefault()`. When false, events are logged only — use this
+  // for non-graded practice mode.
+  strict?: boolean;
   // Threshold (penalty points) at which we hard-stop the session and tell
   // the parent to auto-submit. Mirrors the backend's flag threshold.
   hardStopPenalty?: number;
@@ -53,33 +57,33 @@ const safeRandomId = () => {
 /**
  * Browser-side anti-cheat / integrity hook used by the test page.
  *
- * What this actually does:
- *  - LOGS (does not block) copy / cut / paste / right-click / drag /
- *    text-selection so admins can see misuse but the student is not
- *    locked out by an over-eager handler,
- *  - LOGS keyboard shortcuts (Ctrl/Cmd+C/V/X/P/S/U, F12,
- *    Ctrl+Shift+I/J/C, PrintScreen) the same way — we used to
- *    `preventDefault` here but that interfered with screen readers and
- *    accessibility tools, and the student already agreed to a no-resume
- *    policy on the integrity gate.
- *  - listens to visibility / window blur to detect tab switching,
- *  - runs a lightweight devtools-open heuristic,
+ * What this does in strict mode (the default for live tests):
+ *  - BLOCKS copy / cut / paste / right-click / drag / text-selection
+ *    via `preventDefault()` and logs the attempt,
+ *  - BLOCKS Ctrl/Cmd+C/V/X/P/S/U/A, F12, Ctrl+Shift+I/J/C, and
+ *    PrintScreen,
+ *  - listens to visibility / window blur to detect tab switching
+ *    (which the backend treats as a hard policy failure),
+ *  - runs a lightweight devtools-open heuristic and a multi-display
+ *    heuristic (also hard policy failures on the server),
  *  - mirrors every event up to the backend so admins can audit flagged
  *    sessions,
  *  - tracks a local penalty score so the UI can warn before the backend
- *    flags.
+ *    flags or zero-scores.
  *
  * What it explicitly does NOT do:
  *  - it does not stop a second device / phone / OCR — the watermark in
  *    TestPage and the server-side question shuffle handle those instead,
- *  - it does not stop remote-control software,
- *  - it does not enforce fullscreen — the parent component decides when
- *    to request fullscreen and calls `reportEvent` accordingly.
+ *  - it does not stop remote-control software.
+ *
+ * Pass `strict={false}` for a logging-only mode (e.g. for the
+ * `/practice` page where students aren't being graded).
  */
 export const useAntiCheat = (options: UseAntiCheatOptions) => {
   const {
     sessionId,
     enabled,
+    strict = true,
     hardStopPenalty = 40,
     warnPenalty = 20,
     onHardStop,
@@ -200,22 +204,41 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
       // not a violation; useful in metadata only.
     };
 
-    const handleCopy = () => {
+    const handleCopy = (e: ClipboardEvent) => {
+      if (strict) e.preventDefault();
       reportEventRef.current('copy_blocked');
     };
-    const handleCut = () => {
+    const handleCut = (e: ClipboardEvent) => {
+      if (strict) e.preventDefault();
       reportEventRef.current('copy_blocked', { variant: 'cut' });
     };
-    const handlePaste = () => {
+    const handlePaste = (e: ClipboardEvent) => {
+      // Allow paste inside text inputs that opt-in via the
+      // `data-allow-paste` attribute (e.g. AI interview chat input).
+      const target = e.target as HTMLElement | null;
+      const allowPaste = target?.closest?.('[data-allow-paste]');
+      if (strict && !allowPaste) e.preventDefault();
       reportEventRef.current('paste_blocked');
     };
-    const handleContextMenu = () => {
+    const handleContextMenu = (e: MouseEvent) => {
+      if (strict) e.preventDefault();
       reportEventRef.current('right_click_blocked');
     };
-    const handleSelectStart = () => {
+    const handleSelectStart = (e: Event) => {
+      // Selection is still allowed inside form inputs / chat boxes so
+      // students can edit their own answers; we only block when the
+      // selection starts on a non-editable surface.
+      const target = e.target as HTMLElement | null;
+      const isEditable =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable);
+      if (strict && !isEditable) e.preventDefault();
       reportEventRef.current('selection_blocked');
     };
-    const handleDragStart = () => {
+    const handleDragStart = (e: DragEvent) => {
+      if (strict) e.preventDefault();
       reportEventRef.current('drag_blocked');
     };
     const handleBeforeUnload = () => {
@@ -236,17 +259,20 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Logging-only keyboard observer. We deliberately do NOT call
-      // `preventDefault` for any shortcut here so that screen readers,
-      // password managers, and assistive tools keep working. The
-      // integrity record still captures the attempt.
       const key = e.key.toLowerCase();
       const ctrlOrMeta = e.ctrlKey || e.metaKey;
+      const target = e.target as HTMLElement | null;
+      const isEditable =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable);
 
       if (
         key === 'f12' ||
         (ctrlOrMeta && e.shiftKey && ['i', 'j', 'c'].includes(key))
       ) {
+        if (strict) e.preventDefault();
         reportEventRef.current('devtools_suspected', { key });
         return;
       }
@@ -254,7 +280,23 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
         reportEventRef.current('screenshot_keyshortcut');
         return;
       }
-      if (ctrlOrMeta && ['c', 'x', 'v', 's', 'u', 'p', 'a'].includes(key)) {
+      // `Escape` exits fullscreen which the backend treats as a hard
+      // policy failure. We can't truly preventDefault the browser's
+      // ESC-to-exit-fullscreen, but we log the attempt so the report
+      // shows the cause clearly.
+      if (key === 'escape' && document.fullscreenElement) {
+        reportEventRef.current('fullscreen_exit_attempt');
+      }
+      // Block view-source / print / save / select-all. Allow Ctrl+C / V
+      // / X inside text inputs so students can still edit their own
+      // answers.
+      if (ctrlOrMeta && ['s', 'u', 'p'].includes(key)) {
+        if (strict) e.preventDefault();
+        reportEventRef.current('keyboard_shortcut_blocked', { key });
+        return;
+      }
+      if (ctrlOrMeta && ['c', 'x', 'v', 'a'].includes(key)) {
+        if (strict && !isEditable) e.preventDefault();
         reportEventRef.current('keyboard_shortcut_blocked', { key });
       }
     };
@@ -272,6 +314,18 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
     window.addEventListener('offline', handleOffline);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('keydown', handleKeyDown, true);
+
+    // Detect mobile / touch-only devices. The backend also blocks
+    // these at session-start (see SMALL BUG FIXES on backend), but we
+    // emit the event so the audit log records the attempted device.
+    const isMobile = /android|iphone|ipod|ipad|mobile|windows phone|opera mini/i.test(
+      navigator.userAgent,
+    );
+    if (isMobile) {
+      reportEventRef.current('mobile_device_blocked', {
+        user_agent: navigator.userAgent,
+      });
+    }
 
     // Devtools-open heuristic: the difference between outerWidth and
     // innerWidth (or outerHeight / innerHeight) jumps when the panel
@@ -329,7 +383,7 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
       flushQueue();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+  }, [enabled, strict]);
 
   // Make sure pending events flush when the session id arrives after
   // the listeners are already running.

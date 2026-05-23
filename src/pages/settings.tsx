@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   BellFilled,
   BulbFilled,
@@ -8,30 +8,20 @@ import {
 } from '@ant-design/icons';
 import { Segmented, Switch, message } from 'antd';
 import { useI18n, type Locale } from '../i18n';
+import useTheme, { type Theme } from '../hooks/useTheme';
 
-const THEME_KEY = 'tf-theme';
 const NOTIF_KEY = 'tf-notifications';
 const SOUND_KEY = 'tf-sound';
 
 const SettingsPage: React.FC = () => {
   const { locale, setLocale, t } = useI18n();
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(
-    () => (localStorage.getItem(THEME_KEY) as 'light' | 'dark' | 'system') || 'light',
-  );
+  const { theme, setTheme } = useTheme();
   const [notifications, setNotifications] = useState(
     () => localStorage.getItem(NOTIF_KEY) !== 'false',
   );
   const [sound, setSound] = useState(
     () => localStorage.getItem(SOUND_KEY) !== 'false',
   );
-
-  useEffect(() => {
-    localStorage.setItem(THEME_KEY, theme);
-    const dark =
-      theme === 'dark' ||
-      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.classList.toggle('tf-dark', dark);
-  }, [theme]);
 
   const persistBoolean = (key: string, value: boolean) => {
     localStorage.setItem(key, value ? 'true' : 'false');
@@ -59,11 +49,10 @@ const SettingsPage: React.FC = () => {
         </header>
         <Segmented
           value={theme}
-          onChange={(value) => setTheme(value as 'light' | 'dark' | 'system')}
+          onChange={(value) => setTheme(value as Theme)}
           options={[
             { label: t('settings.themeLight'), value: 'light' },
             { label: t('settings.themeDark'), value: 'dark' },
-            { label: t('settings.themeSystem'), value: 'system' },
           ]}
         />
         <p className="text-[11px] text-gray-400 mt-3">

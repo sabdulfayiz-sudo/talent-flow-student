@@ -1,10 +1,98 @@
 @import "tailwindcss";
 
+/*
+ * Tailwind v4 dark mode. `.tf-dark` on <html> activates every `dark:`
+ * utility in the codebase. See `src/hooks/useTheme.ts` for how the
+ * class is toggled.
+ */
+@custom-variant dark (&:where(.tf-dark, .tf-dark *));
 
+@theme {
+  --color-tf-bg-surface: #ffffff;
+  --color-tf-bg-elevated: #ffffff;
+  --color-tf-bg-app: #fbfbfc;
+  --color-tf-fg-strong: #0b1220;
+  --color-tf-fg-muted: #4a5567;
+  --color-tf-border: #e5e7eb;
+}
+
+/* Dark-mode token overrides. */
+.tf-dark {
+  --color-tf-bg-surface: #161a23;
+  --color-tf-bg-elevated: #1d222d;
+  --color-tf-bg-app: #0d1018;
+  --color-tf-fg-strong: #f3f5f9;
+  --color-tf-fg-muted: #a5adba;
+  --color-tf-border: #29303d;
+  color-scheme: dark;
+}
+
+html,
 body {
   margin: 0;
   padding: 0;
+  background-color: var(--color-tf-bg-app);
+  color: var(--color-tf-fg-strong);
 }
+
+/*
+ * Dark-mode utility overrides.
+ *
+ * The codebase uses Tailwind v3 light utilities (bg-white, text-gray-*,
+ * border-gray-*) extensively. Re-painting every component to use
+ * `dark:` variants would be ~600 edits. Instead we override the most
+ * common light surfaces inside `.tf-dark`. This keeps existing markup
+ * working and gives the dark theme a real, polished look out of the
+ * box.
+ *
+ * Selectors are intentionally specific (single class) so they win over
+ * the original Tailwind utility but lose to anything with `dark:` (the
+ * `:where()` pseudo wrapper around `tf-dark` in our @custom-variant
+ * keeps `dark:` at specificity 0, but these here are also `:where()`
+ * to keep both layers at 0 and let later utilities win naturally).
+ */
+.tf-dark :where(.bg-white) { background-color: #1d222d; }
+.tf-dark :where(.bg-gray-50, .bg-slate-50, .bg-neutral-50) { background-color: #161a23; }
+.tf-dark :where(.bg-gray-100, .bg-slate-100, .bg-neutral-100) { background-color: #1d222d; }
+.tf-dark :where(.bg-gray-200, .bg-slate-200, .bg-neutral-200) { background-color: #242a36; }
+.tf-dark :where(.bg-gray-300, .bg-slate-300, .bg-neutral-300) { background-color: #2c3340; }
+.tf-dark :where(.bg-gray-900, .bg-slate-900, .bg-neutral-900, .bg-black) { background-color: #f3f5f9; color: #0b1220; }
+
+.tf-dark :where(.text-black) { color: #f3f5f9; }
+.tf-dark :where(.text-gray-900, .text-slate-900, .text-neutral-900) { color: #f3f5f9; }
+.tf-dark :where(.text-gray-800, .text-slate-800, .text-neutral-800) { color: #e6e9ee; }
+.tf-dark :where(.text-gray-700, .text-slate-700, .text-neutral-700) { color: #d3d8e0; }
+.tf-dark :where(.text-gray-600, .text-slate-600, .text-neutral-600) { color: #b6bdc8; }
+.tf-dark :where(.text-gray-500, .text-slate-500, .text-neutral-500) { color: #98a0ad; }
+.tf-dark :where(.text-gray-400, .text-slate-400, .text-neutral-400) { color: #7d8593; }
+
+.tf-dark :where(.border-gray-100, .border-slate-100, .border-neutral-100) { border-color: #232936; }
+.tf-dark :where(.border-gray-200, .border-slate-200, .border-neutral-200) { border-color: #2a313e; }
+.tf-dark :where(.border-gray-300, .border-slate-300, .border-neutral-300) { border-color: #303847; }
+
+.tf-dark :where(.divide-gray-100 > * + *, .divide-gray-200 > * + *) { border-color: #2a313e; }
+.tf-dark :where(.ring-gray-200, .ring-gray-100) { --tw-ring-color: #2a313e; }
+
+/*
+ * Soft pastel surfaces used in stat cards (e.g. bg-rose-50, bg-emerald-50)
+ * need a darker, more saturated counterpart so the cards keep their
+ * meaning without blinding the user in dark mode.
+ */
+.tf-dark :where(.bg-rose-50) { background-color: rgba(244, 63, 94, 0.12); }
+.tf-dark :where(.bg-emerald-50) { background-color: rgba(16, 185, 129, 0.12); }
+.tf-dark :where(.bg-amber-50, .bg-yellow-50) { background-color: rgba(245, 158, 11, 0.12); }
+.tf-dark :where(.bg-blue-50, .bg-sky-50, .bg-indigo-50) { background-color: rgba(59, 130, 246, 0.12); }
+.tf-dark :where(.bg-violet-50, .bg-purple-50) { background-color: rgba(139, 92, 246, 0.12); }
+.tf-dark :where(.bg-pink-50, .bg-fuchsia-50) { background-color: rgba(236, 72, 153, 0.12); }
+
+/* Hover background helpers. */
+.tf-dark :where(.hover\:bg-gray-50:hover, .hover\:bg-slate-50:hover) { background-color: #1d222d; }
+.tf-dark :where(.hover\:bg-gray-100:hover, .hover\:bg-slate-100:hover) { background-color: #242a36; }
+.tf-dark :where(.hover\:text-black:hover) { color: #f3f5f9; }
+
+/* Use the [#hex] arbitrary-value backgrounds present in MainLayout/sign-in. */
+.tf-dark :where([class*="bg-[#FBFBFC]"]) { background-color: #0d1018; }
+.tf-dark :where([class*="bg-[#FAFAFA]"]) { background-color: #0d1018; }
 
 @keyframes tf-card-pop {
   from {
@@ -25,4 +113,15 @@ body {
   .tf-card-pop {
     animation: none;
   }
+}
+
+/*
+ * Fullscreen test page chrome. Locks scrolling and stretches the
+ * page across the whole viewport. The dedicated `.tf-test-shell`
+ * class is applied to `<html>` while the test is running.
+ */
+.tf-test-shell,
+.tf-test-shell body {
+  overflow: hidden;
+  background-color: var(--color-tf-bg-app);
 }
