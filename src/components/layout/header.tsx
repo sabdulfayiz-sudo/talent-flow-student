@@ -22,7 +22,8 @@ import { useNavigate } from 'react-router-dom';
 import type { User } from '../../features/auth/authSlice';
 import { useMarkAllNotificationsRead, useNotifications } from '../../hooks/useCandidatePortal';
 import { useI18n, SUPPORTED_LOCALES, type Locale } from '../../i18n';
-import useTheme from '../../hooks/useTheme';
+import { useTheme } from '../../hooks/useTheme';
+import { resolveAssetUrl } from '../../lib/api';
 
 interface HeaderProps {
   user: User | null;
@@ -170,7 +171,7 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
 
         <Tooltip title={t('header.theme')}>
           <button
-            onClick={handleToggleTheme}
+            onClick={toggleTheme}
             className="flex items-center justify-center rounded-full size-10 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors cursor-pointer"
           >
             {isDark ? <BulbOutlined className="text-lg" /> : <MoonOutlined className="text-lg" />}

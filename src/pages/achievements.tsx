@@ -62,7 +62,7 @@ const AchievementsPage: React.FC = () => {
         </div>
       </div>
 
-      <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <section className="tf-stagger grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
           { label: 'Completed', value: data.summary.completed_assessments, icon: <TrophyFilled className="text-amber-500" /> },
           { label: 'Perfect', value: data.summary.perfect_scores, icon: <CrownFilled className="text-amber-500" /> },
@@ -70,7 +70,7 @@ const AchievementsPage: React.FC = () => {
           { label: 'Certificates', value: data.summary.certificates, icon: <StarFilled className="text-blue-500" /> },
           { label: 'Streak', value: `${data.summary.current_streak_days}d`, icon: <FireFilled className="text-rose-500" /> },
         ].map((card) => (
-          <div key={card.label} className="bg-white border border-gray-100 rounded-2xl p-4">
+          <div key={card.label} className="tf-hover-lift animate-in fade-in slide-in-from-bottom-2 duration-500 bg-white border border-gray-100 rounded-2xl p-4">
             <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 flex items-center gap-1">
               {card.icon} {card.label}
             </p>
@@ -79,14 +79,14 @@ const AchievementsPage: React.FC = () => {
         ))}
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+      <section className="tf-stagger grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         {data.badges.map((badge) => {
           const tier = tierStyle[badge.tier] ?? tierStyle.bronze;
           const percent = Math.min(100, Math.round((badge.progress / badge.target) * 100));
           return (
             <article
               key={badge.id}
-              className={`bg-white rounded-3xl border border-gray-100 p-6 shadow-sm relative overflow-hidden ${badge.earned ? `ring-4 ${tier.ring}` : 'opacity-90'}`}
+              className={`tf-hover-lift animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white rounded-3xl border border-gray-100 p-6 shadow-sm relative overflow-hidden ${badge.earned ? `ring-4 ${tier.ring}` : 'opacity-90'}`}
             >
               <div className="flex items-center gap-3 mb-4">
                 <div className={`size-12 rounded-2xl flex items-center justify-center text-2xl ${tier.chip}`}>

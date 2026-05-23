@@ -58,13 +58,13 @@ const LeaderboardPage: React.FC = () => {
             <div className="col-span-1 text-right">Sessions</div>
             <div className="col-span-2 text-right">Last activity</div>
           </header>
-          <ul>
+          <ul className="tf-stagger">
             {data.items.map((item) => {
               const podium = item.rank <= 3;
               return (
                 <li
                   key={`${item.rank}-${item.user_id ?? item.display_name}`}
-                  className={`grid grid-cols-12 gap-2 px-6 py-4 border-t border-gray-50 items-center text-sm ${
+                  className={`animate-in fade-in slide-in-from-bottom-2 duration-300 grid grid-cols-12 gap-2 px-6 py-4 border-t border-gray-50 items-center text-sm ${
                     item.is_self ? 'bg-amber-50' : 'hover:bg-gray-50'
                   }`}
                 >

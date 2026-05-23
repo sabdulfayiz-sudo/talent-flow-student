@@ -118,13 +118,13 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="tf-stagger grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {statCards.map((card, index) => {
           const value = data.stats[card.key] ?? 0;
           const suffix = 'suffix' in card ? card.suffix : '';
 
           return (
-            <section key={card.key} className="tf-card-pop bg-white rounded-3xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-shadow" style={{ animationDelay: `${index * 60}ms` }}>
+            <section key={card.key} className="tf-card-pop tf-hover-lift bg-white rounded-3xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-shadow" style={{ animationDelay: `${index * 60}ms` }}>
               <div className="flex items-center justify-between mb-5">
                 <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">{card.label}</p>
                 <span className="text-gray-400 text-lg">{card.icon}</span>
@@ -146,10 +146,12 @@ const Dashboard: React.FC = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="tf-stagger grid grid-cols-1 lg:grid-cols-2 gap-6">
             {data.active_assessments.length ? (
               data.active_assessments.map((item) => (
-                <AssessmentCard key={item.assignment_id} item={item} onAction={handleAssessmentAction} />
+                <div key={item.assignment_id} className="tf-hover-lift animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <AssessmentCard item={item} onAction={handleAssessmentAction} />
+                </div>
               ))
             ) : (
               <div className="lg:col-span-2 bg-white rounded-3xl border border-gray-100 p-12 text-center text-gray-400">
