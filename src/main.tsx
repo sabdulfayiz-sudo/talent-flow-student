@@ -9,6 +9,14 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import I18nProvider from './i18n/Provider';
 import './index.css';
 
+// Initialise theme before first paint so the sign-in page (and any
+// full-page reload) respects the saved preference without flashing.
+const savedTheme = localStorage.getItem('tf-theme') as 'light' | 'dark' | 'system' | null;
+const isDark =
+  savedTheme === 'dark' ||
+  (savedTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+document.documentElement.classList.toggle('tf-dark', isDark);
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

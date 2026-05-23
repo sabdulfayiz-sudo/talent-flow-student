@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   BellOutlined,
   BulbOutlined,
@@ -23,6 +23,7 @@ import type { User } from '../../features/auth/authSlice';
 import { useMarkAllNotificationsRead, useNotifications } from '../../hooks/useCandidatePortal';
 import { useI18n, SUPPORTED_LOCALES, type Locale } from '../../i18n';
 import { resolveAssetUrl } from '../../lib/api';
+import { useTheme } from '../../hooks/useTheme';
 
 interface HeaderProps {
   user: User | null;
@@ -30,8 +31,6 @@ interface HeaderProps {
   onToggle: () => void;
   onLogout: () => void;
 }
-
-const THEME_KEY = 'tf-theme';
 
 const LOCALE_LABELS: Record<Locale, string> = {
   en: 'English',
@@ -44,6 +43,7 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
   const { data: notifications } = useNotifications();
   const markAllRead = useMarkAllNotificationsRead();
   const { locale, setLocale, t } = useI18n();
+  const { isDark, setTheme } = useTheme();
   const [search, setSearch] = useState('');
 
   const quickDestinations = useMemo(
@@ -61,17 +61,14 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
     ],
     [t],
   );
-  const [isDark, setIsDark] = useState(() => {
-    const saved = localStorage.getItem(THEME_KEY);
-    if (saved === 'dark') return true;
-    if (saved === 'light') return false;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('tf-dark', isDark);
-    localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
-  }, [isDark]);
+  const handleToggleTheme = () => {
+    document.documentElement.classList.add('tf-theme-animate');
+    setTheme(isDark ? 'light' : 'dark');
+    setTimeout(() => {
+      document.documentElement.classList.remove('tf-theme-animate');
+    }, 300);
+  };
 
   const userMenuItems: MenuProps['items'] = [
     { key: 'profile', label: t('nav.profile'), icon: <UserOutlined />, onClick: () => navigate('/profile') },
@@ -183,7 +180,7 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
 
         <Tooltip title={t('header.theme')}>
           <button
-            onClick={() => setIsDark((v) => !v)}
+            onClick={handleToggleTheme}
             className="flex items-center justify-center rounded-full size-10 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors cursor-pointer"
           >
             {isDark ? <BulbOutlined className="text-lg" /> : <MoonOutlined className="text-lg" />}
