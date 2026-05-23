@@ -52,9 +52,10 @@ const LeaderboardPage: React.FC = () => {
         <section className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
           <header className="grid grid-cols-12 gap-2 px-6 py-4 bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-500">
             <div className="col-span-1">Rank</div>
-            <div className="col-span-5">Student</div>
+            <div className="col-span-4">Student</div>
+            <div className="col-span-2">Group</div>
             <div className="col-span-2 text-right">Score</div>
-            <div className="col-span-2 text-right">Sessions</div>
+            <div className="col-span-1 text-right">Sessions</div>
             <div className="col-span-2 text-right">Last activity</div>
           </header>
           <ul>
@@ -75,7 +76,7 @@ const LeaderboardPage: React.FC = () => {
                     )}
                     {item.rank}
                   </div>
-                  <div className="col-span-5 font-bold text-gray-900 flex items-center gap-2">
+                  <div className="col-span-4 font-bold text-gray-900 flex items-center gap-2">
                     <span className={`size-9 rounded-full flex items-center justify-center text-xs font-black ${item.is_self ? 'bg-black text-white' : 'bg-gray-100 text-gray-500'}`}>
                       {item.display_name.slice(0, 2).toUpperCase()}
                     </span>
@@ -84,11 +85,16 @@ const LeaderboardPage: React.FC = () => {
                       {item.is_self ? <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">You</p> : null}
                     </div>
                   </div>
+                  <div className="col-span-2 text-xs font-black text-gray-500">
+                    <span className="inline-flex rounded-full bg-gray-50 px-2.5 py-1">
+                      {item.group_name || 'No group'}
+                    </span>
+                  </div>
                   <div className="col-span-2 text-right font-black text-gray-900 flex items-center justify-end gap-1">
                     <TrophyFilled className="text-amber-500" />
                     {item.average_score}%
                   </div>
-                  <div className="col-span-2 text-right text-gray-600 font-semibold">{item.completed_sessions}</div>
+                  <div className="col-span-1 text-right text-gray-600 font-semibold">{item.completed_sessions}</div>
                   <div className="col-span-2 text-right text-gray-500 text-xs">
                     {item.last_activity_at
                       ? new Date(item.last_activity_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

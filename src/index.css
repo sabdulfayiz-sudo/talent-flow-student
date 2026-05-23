@@ -6,6 +6,69 @@ body {
   padding: 0;
 }
 
+html.tf-dark body {
+  background: #0b1020;
+  color: #e5e7eb;
+}
+
+html.tf-dark .bg-white,
+html.tf-dark .bg-white\/80 {
+  background-color: #111827 !important;
+}
+
+html.tf-dark .bg-gray-50,
+html.tf-dark .hover\:bg-gray-50:hover,
+html.tf-dark .hover\:bg-gray-100:hover {
+  background-color: #1f2937 !important;
+}
+
+html.tf-dark .border-gray-100,
+html.tf-dark .border-gray-200 {
+  border-color: #263244 !important;
+}
+
+html.tf-dark .text-gray-900,
+html.tf-dark .hover\:text-black:hover {
+  color: #f9fafb !important;
+}
+
+html.tf-dark .text-gray-700,
+html.tf-dark .text-gray-600,
+html.tf-dark .text-gray-500 {
+  color: #cbd5e1 !important;
+}
+
+html.tf-dark .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+html.tf-dark .shadow-sm,
+html.tf-dark .shadow-xl {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35) !important;
+}
+
+html.tf-dark .ant-modal-content,
+html.tf-dark .ant-modal-header {
+  background: #111827 !important;
+  color: #f9fafb !important;
+}
+
+html.tf-dark .ant-modal-title,
+html.tf-dark .ant-form-item-label > label {
+  color: #f9fafb !important;
+}
+
+html.tf-dark .ant-input,
+html.tf-dark .ant-input-affix-wrapper {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+html.tf-dark .ant-switch {
+  background: #334155;
+}
+
 @keyframes tf-card-pop {
   from {
     opacity: 0;
