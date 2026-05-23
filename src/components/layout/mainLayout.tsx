@@ -6,6 +6,7 @@ import { logout } from '../../features/auth/authSlice';
 import { useTheme } from '../../hooks/useTheme';
 import Sidebar from './sidebar';
 import HeaderComponent from './header';
+import useTheme from '../../hooks/useTheme';
 
 const { Content } = Layout;
 

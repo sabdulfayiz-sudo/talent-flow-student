@@ -61,7 +61,6 @@ const SettingsPage: React.FC = () => {
           options={[
             { label: t('settings.themeLight'), value: 'light' },
             { label: t('settings.themeDark'), value: 'dark' },
-            { label: t('settings.themeSystem'), value: 'system' },
           ]}
         />
         <p className="text-[11px] text-gray-400 mt-3">

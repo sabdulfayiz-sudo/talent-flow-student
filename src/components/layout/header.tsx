@@ -22,8 +22,7 @@ import { useNavigate } from 'react-router-dom';
 import type { User } from '../../features/auth/authSlice';
 import { useMarkAllNotificationsRead, useNotifications } from '../../hooks/useCandidatePortal';
 import { useI18n, SUPPORTED_LOCALES, type Locale } from '../../i18n';
-import { resolveAssetUrl } from '../../lib/api';
-import { useTheme } from '../../hooks/useTheme';
+import useTheme from '../../hooks/useTheme';
 
 interface HeaderProps {
   user: User | null;
@@ -43,7 +42,7 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
   const { data: notifications } = useNotifications();
   const markAllRead = useMarkAllNotificationsRead();
   const { locale, setLocale, t } = useI18n();
-  const { isDark, setTheme } = useTheme();
+  const { isDark, toggleTheme } = useTheme();
   const [search, setSearch] = useState('');
 
   const quickDestinations = useMemo(
@@ -61,15 +60,6 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
     ],
     [t],
   );
-
-  const handleToggleTheme = () => {
-    document.documentElement.classList.add('tf-theme-animate');
-    setTheme(isDark ? 'light' : 'dark');
-    setTimeout(() => {
-      document.documentElement.classList.remove('tf-theme-animate');
-    }, 300);
-  };
-
   const userMenuItems: MenuProps['items'] = [
     { key: 'profile', label: t('nav.profile'), icon: <UserOutlined />, onClick: () => navigate('/profile') },
     { key: 'achievements', label: t('nav.achievements'), icon: <SafetyCertificateOutlined />, onClick: () => navigate('/achievements') },

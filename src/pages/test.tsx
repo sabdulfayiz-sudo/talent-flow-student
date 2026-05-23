@@ -21,6 +21,7 @@ import { useAntiCheat } from '../hooks/useAntiCheat';
 import { useAppSelector } from '../app/hooks';
 import IntegrityGate from '../components/test/integrityGate';
 import Watermark from '../components/test/watermark';
+import CameraTile, { type CameraStatus } from '../components/test/cameraTile';
 import { apiFetch } from '../lib/api';
 import { useI18n } from '../i18n';
 import type { NextQuestionResponse, QuestionOption } from '../types/portal';
@@ -142,6 +143,7 @@ const TestPage: React.FC = () => {
   const [gateOpen, setGateOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [cameraStatus, setCameraStatus] = useState<CameraStatus>('idle');
   const questionStartedAtRef = useRef(0);
   const autoSubmittedRef = useRef(false);
   const abandonFiredRef = useRef(false);
@@ -172,6 +174,24 @@ const TestPage: React.FC = () => {
   }, [studentDisplayName, user]);
 
   const isTestActive = Boolean(effectiveSessionId) && !progress?.is_finished;
+
+  // Lock the body & html into a fullscreen, no-scroll shell while the
+  // test is running. The `.tf-test-shell` class is defined in
+  // `src/index.css` and prevents background scrolling and stretches
+  // the surface across the viewport.
+  useEffect(() => {
+    if (isTestActive) {
+      document.documentElement.classList.add('tf-test-shell');
+      document.body.classList.add('tf-test-shell');
+    } else {
+      document.documentElement.classList.remove('tf-test-shell');
+      document.body.classList.remove('tf-test-shell');
+    }
+    return () => {
+      document.documentElement.classList.remove('tf-test-shell');
+      document.body.classList.remove('tf-test-shell');
+    };
+  }, [isTestActive]);
 
   const handleAutoSubmit = useCallback(async () => {
     if (autoSubmittedRef.current) return;
@@ -394,7 +414,7 @@ const TestPage: React.FC = () => {
 
   if (practiceLoading || eligibilityLoading) {
     return (
-      <div className="min-h-120 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#FBFBFC] dark:bg-[#0d1018]">
         <Spin size="large" />
       </div>
     );
@@ -402,8 +422,10 @@ const TestPage: React.FC = () => {
 
   if (!practice) {
     return (
-      <div className="bg-white rounded-3xl border border-rose-100 p-12 text-center text-rose-500">
-        {t('test.unavailable')}
+      <div className="min-h-screen flex items-center justify-center bg-[#FBFBFC] dark:bg-[#0d1018] p-6">
+        <div className="bg-white rounded-3xl border border-rose-100 p-12 text-center text-rose-500 max-w-md">
+          {t('test.unavailable')}
+        </div>
       </div>
     );
   }
@@ -421,7 +443,8 @@ const TestPage: React.FC = () => {
 
   if (!effectiveSessionId) {
     return (
-      <div className="max-w-220 mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="min-h-screen bg-[#FBFBFC] dark:bg-[#0d1018] py-10 px-6">
+        <div className="max-w-220 mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
         <button
           onClick={() => navigate('/my-assessments')}
           className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-black transition-colors cursor-pointer"
@@ -520,13 +543,14 @@ const TestPage: React.FC = () => {
           onAccept={runStart}
           onCancel={() => setGateOpen(false)}
         />
+        </div>
       </div>
     );
   }
 
   if (nextQuestion.isLoading || !nextQuestion.data) {
     return (
-      <div className="min-h-120 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#FBFBFC] dark:bg-[#0d1018]">
         <Spin size="large" />
       </div>
     );
@@ -536,8 +560,22 @@ const TestPage: React.FC = () => {
   const timerLow = typeof secondsLeft === 'number' && secondsLeft <= 60;
 
   return (
-    <div className="relative max-w-240 mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="fixed inset-0 bg-[#FBFBFC] dark:bg-[#0d1018] overflow-y-auto">
       <Watermark label={watermarkLabel} />
+      <CameraTile enabled={isTestActive} onStatusChange={setCameraStatus} />
+
+      {(cameraStatus === 'denied' ||
+        cameraStatus === 'unavailable' ||
+        cameraStatus === 'error') && (
+        <div className="fixed top-4 left-56 right-4 z-50">
+          <div className="rounded-2xl border-2 border-rose-500 bg-rose-50 text-rose-900 p-3 flex items-start gap-2 text-xs font-bold shadow-lg">
+            <WarningFilled className="mt-0.5 text-base text-rose-600" />
+            <span>{t('test.cameraDenied')}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="relative max-w-240 mx-auto py-8 px-6 lg:px-10 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
 
       <div className="relative z-20 flex items-center justify-between gap-4 flex-wrap">
         <button
@@ -661,6 +699,7 @@ const TestPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+      </div>
     </div>
   );
 };

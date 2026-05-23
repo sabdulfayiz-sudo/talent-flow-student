@@ -3,6 +3,8 @@
 body {
   margin: 0;
   padding: 0;
+  background-color: var(--color-tf-bg-app);
+  color: var(--color-tf-fg-strong);
 }
 
 /* Smooth transitions for theme switching */
@@ -467,4 +469,15 @@ html.tf-dark .ant-picker-focused {
   *::after {
     transition-duration: 0ms !important;
   }
+}
+
+/*
+ * Fullscreen test page chrome. Locks scrolling and stretches the
+ * page across the whole viewport. The dedicated `.tf-test-shell`
+ * class is applied to `<html>` while the test is running.
+ */
+.tf-test-shell,
+.tf-test-shell body {
+  overflow: hidden;
+  background-color: var(--color-tf-bg-app);
 }
