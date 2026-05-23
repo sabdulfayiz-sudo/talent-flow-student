@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   BellOutlined,
   BulbOutlined,
@@ -22,6 +22,7 @@ import { useNavigate } from 'react-router-dom';
 import type { User } from '../../features/auth/authSlice';
 import { useNotifications } from '../../hooks/useCandidatePortal';
 import { useI18n, SUPPORTED_LOCALES, type Locale } from '../../i18n';
+import useTheme from '../../hooks/useTheme';
 
 interface HeaderProps {
   user: User | null;
@@ -29,8 +30,6 @@ interface HeaderProps {
   onToggle: () => void;
   onLogout: () => void;
 }
-
-const THEME_KEY = 'tf-theme';
 
 const LOCALE_LABELS: Record<Locale, string> = {
   en: 'English',
@@ -42,6 +41,7 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
   const navigate = useNavigate();
   const { data: notifications } = useNotifications();
   const { locale, setLocale, t } = useI18n();
+  const { isDark, toggleTheme } = useTheme();
   const [search, setSearch] = useState('');
 
   const quickDestinations = useMemo(
@@ -59,18 +59,6 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
     ],
     [t],
   );
-  const [isDark, setIsDark] = useState(() => {
-    const saved = localStorage.getItem(THEME_KEY);
-    if (saved === 'dark') return true;
-    if (saved === 'light') return false;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('tf-dark', isDark);
-    localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
-  }, [isDark]);
-
   const userMenuItems: MenuProps['items'] = [
     { key: 'profile', label: t('nav.profile'), icon: <UserOutlined />, onClick: () => navigate('/profile') },
     { key: 'achievements', label: t('nav.achievements'), icon: <SafetyCertificateOutlined />, onClick: () => navigate('/achievements') },
@@ -168,7 +156,7 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
 
         <Tooltip title={t('header.theme')}>
           <button
-            onClick={() => setIsDark((v) => !v)}
+            onClick={toggleTheme}
             className="flex items-center justify-center rounded-full size-10 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors cursor-pointer"
           >
             {isDark ? <BulbOutlined className="text-lg" /> : <MoonOutlined className="text-lg" />}

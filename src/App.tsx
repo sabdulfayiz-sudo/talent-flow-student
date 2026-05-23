@@ -51,6 +51,14 @@ const App: React.FC = () => {
 
         {/* Protected Routes Wrapper */}
         <Route element={<ProtectedRoute />}>
+          {/*
+            The test page renders standalone (no sidebar, no header, no
+            nav). Anything that distracts from the assessment is gone.
+            See `pages/test.tsx` for the fullscreen layout and the
+            webcam-required integrity gate.
+          */}
+          <Route path="/test/:practiceId" element={<TestPage />} />
+
           <Route element={<MainLayout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/my-assessments" element={<AssessmentsPage />} />
@@ -59,7 +67,6 @@ const App: React.FC = () => {
             <Route path="/achievements" element={<AchievementsPage />} />
             <Route path="/ai-interview" element={<AIInterviewPage />} />
             <Route path="/resume-review" element={<ResumeReviewPage />} />
-            <Route path="/test/:practiceId" element={<TestPage />} />
             <Route path="/reports/:sessionId" element={<ReportPage />} />
             <Route path="/result/:sessionId" element={<ReportPage />} />
             <Route path="/certificates" element={<CertificatesPage />} />
