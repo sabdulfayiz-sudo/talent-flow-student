@@ -13,6 +13,18 @@ export class ApiError extends Error {
 }
 
 const readErrorMessage = (payload: unknown, fallback: string) => {
+  if (typeof payload === 'string') {
+    const compact = payload.replace(/\s+/g, ' ').trim();
+    if (
+      compact.includes('<!DOCTYPE') ||
+      compact.includes('<html') ||
+      compact.toLowerCase().includes('vercel')
+    ) {
+      return 'The service is temporarily unavailable. Please try again in a moment.';
+    }
+    if (compact) return compact.slice(0, 180);
+  }
+
   if (payload && typeof payload === 'object' && 'detail' in payload) {
     const detail = (payload as { detail?: unknown }).detail;
     if (typeof detail === 'string') return detail;
@@ -30,6 +42,12 @@ const readErrorMessage = (payload: unknown, fallback: string) => {
   return fallback;
 };
 
+export const resolveAssetUrl = (url?: string | null) => {
+  if (!url) return undefined;
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${API_URL}${url.startsWith('/') ? url : `/${url}`}`;
+};
+
 export const apiFetch = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const token = localStorage.getItem('token');
   const headers = new Headers(init.headers);
@@ -40,10 +58,18 @@ export const apiFetch = async <T>(path: string, init: RequestInit = {}): Promise
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers,
+    });
+  } catch {
+    throw new ApiError(
+      0,
+      'Unable to reach TalentFlow right now. Check your connection and try again.',
+    );
+  }
   const contentType = response.headers.get('content-type') ?? '';
   const payload = contentType.includes('application/json')
     ? await response.json().catch(() => null)

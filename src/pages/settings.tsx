@@ -8,20 +8,28 @@ import {
 } from '@ant-design/icons';
 import { Segmented, Switch, message } from 'antd';
 import { useI18n, type Locale } from '../i18n';
-import useTheme, { type Theme } from '../hooks/useTheme';
+import { useTheme } from '../hooks/useTheme';
 
 const NOTIF_KEY = 'tf-notifications';
 const SOUND_KEY = 'tf-sound';
 
 const SettingsPage: React.FC = () => {
   const { locale, setLocale, t } = useI18n();
-  const { theme, setTheme } = useTheme();
+  const { mode: theme, setTheme } = useTheme();
   const [notifications, setNotifications] = useState(
     () => localStorage.getItem(NOTIF_KEY) !== 'false',
   );
   const [sound, setSound] = useState(
     () => localStorage.getItem(SOUND_KEY) !== 'false',
   );
+
+  const handleSetTheme = (value: 'light' | 'dark' | 'system') => {
+    document.documentElement.classList.add('tf-theme-animate');
+    setTheme(value);
+    setTimeout(() => {
+      document.documentElement.classList.remove('tf-theme-animate');
+    }, 300);
+  };
 
   const persistBoolean = (key: string, value: boolean) => {
     localStorage.setItem(key, value ? 'true' : 'false');
@@ -49,7 +57,7 @@ const SettingsPage: React.FC = () => {
         </header>
         <Segmented
           value={theme}
-          onChange={(value) => setTheme(value as Theme)}
+          onChange={(value) => handleSetTheme(value as 'light' | 'dark' | 'system')}
           options={[
             { label: t('settings.themeLight'), value: 'light' },
             { label: t('settings.themeDark'), value: 'dark' },

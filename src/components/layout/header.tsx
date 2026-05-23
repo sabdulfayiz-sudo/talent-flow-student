@@ -20,7 +20,7 @@ import { Avatar, Badge, Button, Dropdown, Empty, Input, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { User } from '../../features/auth/authSlice';
-import { useNotifications } from '../../hooks/useCandidatePortal';
+import { useMarkAllNotificationsRead, useNotifications } from '../../hooks/useCandidatePortal';
 import { useI18n, SUPPORTED_LOCALES, type Locale } from '../../i18n';
 import useTheme from '../../hooks/useTheme';
 
@@ -40,6 +40,7 @@ const LOCALE_LABELS: Record<Locale, string> = {
 const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) => {
   const navigate = useNavigate();
   const { data: notifications } = useNotifications();
+  const markAllRead = useMarkAllNotificationsRead();
   const { locale, setLocale, t } = useI18n();
   const { isDark, toggleTheme } = useTheme();
   const [search, setSearch] = useState('');
@@ -75,18 +76,31 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
   }));
 
   const notificationItems: MenuProps['items'] = notifications?.items.length
-    ? notifications.items.map((item, index) => ({
+    ? [
+      ...(notifications.unread_count
+        ? [{
+          key: 'mark-all-read',
+          label: (
+            <button className="w-full text-left text-xs font-black text-blue-600">
+              Mark all as read
+            </button>
+          ),
+          onClick: () => markAllRead.mutate(),
+        }, { type: 'divider' as const }]
+        : []),
+      ...notifications.items.map((item, index) => ({
       key: `${item.type}-${index}`,
       label: (
         <div className="max-w-72 py-1">
-          <p className="text-xs font-black text-gray-900 mb-1">{item.title}</p>
+          <p className={`text-xs font-black mb-1 ${item.is_read ? 'text-gray-500' : 'text-gray-900'}`}>{item.title}</p>
           <p className="text-xs text-gray-500 leading-relaxed">{item.message}</p>
         </div>
       ),
       onClick: () => {
         if (item.action_url) navigate(item.action_url.replace('/candidate/portal/reports/', '/reports/'));
       },
-    }))
+    })),
+    ]
     : [
       {
         key: 'empty',
@@ -156,7 +170,7 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
 
         <Tooltip title={t('header.theme')}>
           <button
-            onClick={toggleTheme}
+            onClick={handleToggleTheme}
             className="flex items-center justify-center rounded-full size-10 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors cursor-pointer"
           >
             {isDark ? <BulbOutlined className="text-lg" /> : <MoonOutlined className="text-lg" />}
@@ -189,6 +203,7 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
             <Avatar
               className="bg-gradient-to-br from-gray-900 to-gray-700 text-white border border-gray-200 shadow-sm font-bold"
               size={'default'}
+              src={resolveAssetUrl(user?.avatar_url)}
             >
               {initials}
             </Avatar>

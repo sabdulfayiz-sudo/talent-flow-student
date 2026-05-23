@@ -57,6 +57,28 @@ const formatSeconds = (value?: number | null) => {
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
 };
 
+const isMobileTestDevice = () => {
+  const ua = navigator.userAgent.toLowerCase();
+  const mobileUa = /android|iphone|ipad|ipod|mobile|windows phone|opera mini/.test(ua);
+  const coarseSmallScreen = window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 800;
+  return mobileUa || coarseSmallScreen;
+};
+
+const hasMultipleScreens = async () => {
+  const screenAny = window.screen as Screen & { isExtended?: boolean };
+  if (screenAny.isExtended) return true;
+  const windowAny = window as Window & {
+    getScreenDetails?: () => Promise<{ screens?: unknown[] }>;
+  };
+  if (typeof windowAny.getScreenDetails !== 'function') return false;
+  try {
+    const details = await windowAny.getScreenDetails();
+    return (details.screens?.length ?? 1) > 1;
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Fire the abandon beacon. Uses `navigator.sendBeacon` so the browser
  * will still deliver it during `pagehide`/`beforeunload`, when a regular
@@ -84,6 +106,27 @@ const fireAbandonBeacon = (sessionId: string) => {
   }
 };
 
+const fireIntegrityBeacon = (sessionId: string, eventType: string) => {
+  const token = localStorage.getItem('token');
+  const url = `${API_URL}/testing/sessions/${sessionId}/events`;
+  try {
+    fetch(url, {
+      method: 'POST',
+      keepalive: true,
+      headers: token
+        ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+        : { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: eventType,
+        severity: 'critical',
+        payload: { source: 'test_page' },
+      }),
+    }).catch(() => undefined);
+  } catch {
+    // best effort during unload
+  }
+};
+
 const TestPage: React.FC = () => {
   const { practiceId } = useParams();
   const navigate = useNavigate();
@@ -104,6 +147,7 @@ const TestPage: React.FC = () => {
   const questionStartedAtRef = useRef(0);
   const autoSubmittedRef = useRef(false);
   const abandonFiredRef = useRef(false);
+  const mobileBlocked = useMemo(() => isMobileTestDevice(), []);
 
   const { data: practice, isLoading: practiceLoading } = usePracticeInfo(practiceId);
   const { data: eligibility, isLoading: eligibilityLoading } = usePracticeEligibility(practiceId);
@@ -165,6 +209,35 @@ const TestPage: React.FC = () => {
     navigate(`/reports/${effectiveSessionId}`, { replace: true });
   }, [effectiveSessionId, navigate, t]);
 
+  const handleIntegrityStop = useCallback(() => {
+    if (!effectiveSessionId || autoSubmittedRef.current) return;
+    autoSubmittedRef.current = true;
+    message.error('Integrity violation detected. Your test was closed with a zero score.');
+    navigate(`/reports/${effectiveSessionId}`, { replace: true });
+  }, [effectiveSessionId, navigate]);
+
+  const recordCheatingAndStop = useCallback(
+    async (eventType: string, payload?: Record<string, unknown>) => {
+      if (!effectiveSessionId || autoSubmittedRef.current) return;
+      autoSubmittedRef.current = true;
+      try {
+        await apiFetch(`/testing/sessions/${effectiveSessionId}/events`, {
+          method: 'POST',
+          body: JSON.stringify({
+            event_type: eventType,
+            severity: 'critical',
+            payload: payload ?? {},
+          }),
+        });
+      } catch {
+        fireIntegrityBeacon(effectiveSessionId, eventType);
+      }
+      message.error('Integrity violation detected. Your test was closed with a zero score.');
+      navigate(`/reports/${effectiveSessionId}`, { replace: true });
+    },
+    [effectiveSessionId, navigate],
+  );
+
   // Soft toast on logged violations — replaces the giant penalty banner.
   const handleViolationToast = useCallback(
     (violation: { type: string }) => {
@@ -180,7 +253,7 @@ const TestPage: React.FC = () => {
   const { reportEvent } = useAntiCheat({
     sessionId: effectiveSessionId,
     enabled: isTestActive,
-    onHardStop: handleAutoSubmit,
+    onHardStop: handleIntegrityStop,
     onViolation: handleViolationToast,
   });
 
@@ -212,14 +285,14 @@ const TestPage: React.FC = () => {
   useEffect(() => {
     if (!isTestActive || !effectiveSessionId) return;
 
-    const fire = () => {
+    const fire = (eventType = 'page_unload_attempt') => {
       if (abandonFiredRef.current) return;
       abandonFiredRef.current = true;
-      fireAbandonBeacon(effectiveSessionId);
+      fireIntegrityBeacon(effectiveSessionId, eventType);
     };
 
     const onVisibility = () => {
-      if (document.hidden) fire();
+      if (document.hidden) void recordCheatingAndStop('tab_hidden', { reason: 'left_test_tab' });
     };
     const onPageHide = () => {
       fire();
@@ -230,10 +303,7 @@ const TestPage: React.FC = () => {
     const onFullscreenChange = () => {
       // Exiting fullscreen during an active test is treated as leaving.
       if (!document.fullscreenElement) {
-        fire();
-        // We still navigate the user to the report so they aren't
-        // staring at a half-broken page.
-        void handleAutoSubmit();
+        void recordCheatingAndStop('fullscreen_exit', { reason: 'fullscreen_closed' });
       }
     };
 
@@ -247,7 +317,7 @@ const TestPage: React.FC = () => {
       window.removeEventListener('beforeunload', onBeforeUnload);
       document.removeEventListener('fullscreenchange', onFullscreenChange);
     };
-  }, [isTestActive, effectiveSessionId, handleAutoSubmit]);
+  }, [isTestActive, effectiveSessionId, recordCheatingAndStop]);
 
   // Auto-dismiss soft toast after a beat so the test surface doesn't
   // accumulate banners.
@@ -259,26 +329,46 @@ const TestPage: React.FC = () => {
 
   const handleStartClick = () => {
     if (!practiceId) return;
+    if (mobileBlocked) {
+      message.error('Tests can only be started from a desktop or laptop browser.');
+      return;
+    }
     setGateOpen(true);
   };
 
   const runStart = async (opts: { requestFullscreen: boolean }) => {
     if (!practiceId) return;
+    if (mobileBlocked) {
+      message.error('Tests can only be started from a desktop or laptop browser.');
+      return;
+    }
     try {
+      if (await hasMultipleScreens()) {
+        message.error('Disconnect extra displays before starting the test.');
+        return;
+      }
+      if (opts.requestFullscreen) {
+        if (!document.fullscreenEnabled) {
+          message.error('Fullscreen is required to start this test.');
+          return;
+        }
+        try {
+          await document.documentElement.requestFullscreen();
+        } catch {
+          message.error('Please allow fullscreen to start this test.');
+          return;
+        }
+      }
       const session = await startSession.mutateAsync(practiceId);
       setSessionId(session.session_id);
       setGateOpen(false);
       reportEvent('policy_accepted', {
         request_fullscreen: opts.requestFullscreen,
       });
-      if (opts.requestFullscreen) {
-        try {
-          await document.documentElement.requestFullscreen();
-        } catch {
-          reportEvent('fullscreen_request_denied');
-        }
-      }
     } catch (error) {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen().catch(() => undefined);
+      }
       message.error(error instanceof Error ? error.message : t('errors.generic'));
     }
   };
@@ -318,6 +408,7 @@ const TestPage: React.FC = () => {
 
   const confirmExit = async () => {
     setExitOpen(false);
+    if (effectiveSessionId) fireAbandonBeacon(effectiveSessionId);
     await handleAutoSubmit();
   };
 
@@ -409,6 +500,11 @@ const TestPage: React.FC = () => {
               {eligibility.reason ?? t('test.unavailable')}
             </div>
           )}
+          {mobileBlocked && (
+            <div className="mt-4 rounded-2xl bg-rose-50 text-rose-700 p-4 text-sm font-semibold">
+              Tests are locked to desktop and laptop browsers. Please switch to a computer to start this assessment.
+            </div>
+          )}
           {eligibility?.status === 'already_attempted' && (
             <div className="mt-4 rounded-2xl bg-rose-50 text-rose-700 p-4 text-sm font-semibold">
               {t('test.alreadyAttempted')}
@@ -420,6 +516,7 @@ const TestPage: React.FC = () => {
               onClick={handleStartClick}
               disabled={
                 startSession.isPending ||
+                mobileBlocked ||
                 Boolean(isBlocked) ||
                 eligibility?.status === 'already_attempted' ||
                 eligibility?.status === 'finished'

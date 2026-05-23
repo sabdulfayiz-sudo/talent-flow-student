@@ -4,12 +4,70 @@ import {
   CheckCircleFilled,
   ClockCircleOutlined,
   CloseCircleFilled,
+  DownloadOutlined,
+  ShareAltOutlined,
   TrophyOutlined,
   WarningFilled,
 } from '@ant-design/icons';
-import { Progress, Spin } from 'antd';
+import { Progress, Spin, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useReport } from '../hooks/useCandidatePortal';
+import type { ReportResponse } from '../types/portal';
+
+const buildReportShareText = (data: ReportResponse) => (
+  `I scored ${data.score}% on ${data.title} in TalentFlow. ${data.percentile_label} overall.`
+);
+
+const downloadReportImage = (data: ReportResponse) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200;
+  canvas.height = 675;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const gradient = ctx.createLinearGradient(0, 0, 1200, 675);
+  gradient.addColorStop(0, '#0f172a');
+  gradient.addColorStop(0.55, '#111827');
+  gradient.addColorStop(1, '#14532d');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 1200, 675);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.beginPath();
+  ctx.arc(1000, 120, 220, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(140, 610, 180, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 52px Inter, Arial, sans-serif';
+  ctx.fillText('TalentFlow Result', 70, 100);
+
+  ctx.font = '800 34px Inter, Arial, sans-serif';
+  ctx.fillText(data.title.slice(0, 42), 70, 165);
+
+  ctx.font = '900 140px Inter, Arial, sans-serif';
+  ctx.fillText(`${data.score}%`, 70, 340);
+
+  ctx.font = '700 28px Inter, Arial, sans-serif';
+  ctx.fillStyle = '#bbf7d0';
+  ctx.fillText(`${data.status === 'passed' ? 'Passed' : 'Needs improvement'} - ${data.percentile_label}`, 75, 395);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = '700 26px Inter, Arial, sans-serif';
+  ctx.fillText(`Time: ${data.time_taken_label}`, 75, 470);
+  ctx.fillText(`Completed: ${new Date(data.completed_at).toLocaleDateString()}`, 75, 515);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 30px Inter, Arial, sans-serif';
+  ctx.fillText('talentflow.uz', 75, 600);
+
+  const link = document.createElement('a');
+  link.href = canvas.toDataURL('image/png');
+  link.download = `talentflow-${data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-result.png`;
+  link.click();
+};
 
 const ReportPage: React.FC = () => {
   const { sessionId } = useParams();
@@ -28,6 +86,20 @@ const ReportPage: React.FC = () => {
     return <div className="bg-white rounded-3xl border border-rose-100 p-12 text-center text-rose-500">Report is unavailable.</div>;
   }
 
+  const handleShare = async () => {
+    const text = buildReportShareText(data);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'TalentFlow Result', text, url: window.location.href });
+      } else {
+        await navigator.clipboard.writeText(`${text} ${window.location.href}`);
+        message.success('Result link copied.');
+      }
+    } catch {
+      message.info('Sharing was cancelled.');
+    }
+  };
+
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <button onClick={() => navigate('/my-assessments')} className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-black transition-colors cursor-pointer">
@@ -44,6 +116,22 @@ const ReportPage: React.FC = () => {
             <p className="text-gray-500 font-medium">
               Completed {new Date(data.completed_at).toLocaleString()}
             </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={handleShare}
+                className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-xs font-black text-white hover:bg-gray-800 cursor-pointer"
+              >
+                <ShareAltOutlined /> Share result
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadReportImage(data)}
+                className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-black text-gray-900 hover:bg-gray-50 cursor-pointer"
+              >
+                <DownloadOutlined /> Download image
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 xl:min-w-120">

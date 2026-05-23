@@ -10,6 +10,7 @@ export interface CandidateMe {
   email?: string;
   role: string;
   group_name?: string;
+  avatar_url?: string | null;
   student_id: string;
   avatar_initials: string;
 }
@@ -136,12 +137,15 @@ export interface AIProfileResponse {
     id: string;
     username?: string;
     full_name: string;
+    name?: string;
+    surname?: string;
     role: string;
     headline: string;
     location?: string | null;
     university?: string | null;
     graduation_year?: string | null;
     open_to_work: boolean;
+    avatar_url?: string | null;
     avatar_initials: string;
   };
   contact: {
@@ -180,6 +184,9 @@ export interface AIProfileResponse {
 }
 
 export interface ProfileUpdatePayload {
+  name?: string;
+  surname?: string;
+  email?: string;
   headline?: string;
   location?: string;
   university?: string;
@@ -191,6 +198,7 @@ export interface ProfileUpdatePayload {
 }
 
 export interface NotificationItem {
+  id?: string;
   type: string;
   title: string;
   message: string;
@@ -198,12 +206,15 @@ export interface NotificationItem {
   created_at: string;
   action_label: string;
   action_url: string | null;
+  is_read?: boolean;
 }
 
 export interface NotificationsResponse {
   items: NotificationItem[];
   unread_count: number;
 }
+
+export type AvatarUploadResponse = AIProfileResponse;
 
 export interface ReportResponse {
   session_id: string;

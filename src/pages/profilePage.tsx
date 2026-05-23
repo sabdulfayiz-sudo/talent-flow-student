@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  CameraOutlined,
   CheckCircleFilled,
   EditOutlined,
   EnvironmentOutlined,
@@ -11,9 +12,11 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Form, Input, Modal, Progress, Switch, message } from 'antd';
-import { apiFetch } from '../lib/api';
-import { useAIProfile, useAnalytics, useUpdateAIProfile } from '../hooks/useCandidatePortal';
+import { apiFetch, resolveAssetUrl } from '../lib/api';
+import { useAIProfile, useAnalytics, useUpdateAIProfile, useUploadProfileAvatar } from '../hooks/useCandidatePortal';
 import type { ProfileUpdatePayload } from '../types/portal';
+import { useAppDispatch } from '../app/hooks';
+import { updateUser } from '../features/auth/authSlice';
 
 interface SharePayload {
   share_url: string;
@@ -22,13 +25,19 @@ interface SharePayload {
 const ProfilePage: React.FC = () => {
   const { data, isLoading, isError } = useAIProfile();
   const { data: analytics } = useAnalytics();
+  const dispatch = useAppDispatch();
   const updateProfile = useUpdateAIProfile();
+  const uploadAvatar = useUploadProfileAvatar();
   const [isEditing, setIsEditing] = useState(false);
   const [form] = Form.useForm<ProfileUpdatePayload>();
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (data) {
       form.setFieldsValue({
+        name: data.profile.name ?? '',
+        surname: data.profile.surname ?? '',
+        email: data.contact.email ?? '',
         headline: data.profile.headline,
         location: data.profile.location ?? '',
         university: data.profile.university ?? '',
@@ -54,11 +63,57 @@ const ProfilePage: React.FC = () => {
 
   const handleSave = async (values: ProfileUpdatePayload) => {
     try {
-      await updateProfile.mutateAsync(values);
+      const updated = await updateProfile.mutateAsync(values);
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        localStorage.setItem('user', JSON.stringify({
+          ...parsed,
+          name: updated.profile.name ?? parsed.name,
+          surname: updated.profile.surname ?? parsed.surname,
+          email: updated.contact.email ?? parsed.email,
+          avatar_url: updated.profile.avatar_url ?? parsed.avatar_url,
+        }));
+      }
+      dispatch(updateUser({
+        name: updated.profile.name,
+        surname: updated.profile.surname,
+        email: updated.contact.email ?? undefined,
+        avatar_url: updated.profile.avatar_url,
+      }));
       setIsEditing(false);
       message.success('Profile updated.');
     } catch (error) {
       message.error(error instanceof Error ? error.message : 'Unable to update profile.');
+    }
+  };
+
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      message.error('Please upload a PNG, JPG, or WEBP image.');
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      message.error('Profile image must be smaller than 3MB.');
+      return;
+    }
+    try {
+      const updated = await uploadAvatar.mutateAsync(file);
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        localStorage.setItem('user', JSON.stringify({
+          ...parsed,
+          avatar_url: updated.profile.avatar_url,
+        }));
+      }
+      dispatch(updateUser({ avatar_url: updated.profile.avatar_url }));
+      message.success('Profile image updated.');
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'Unable to upload image.');
     }
   };
 
@@ -75,14 +130,30 @@ const ProfilePage: React.FC = () => {
       <section className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1.5 bg-black" />
         <div className="flex flex-col lg:flex-row items-center gap-8">
-          <div className="size-28 rounded-full border-4 border-white shadow-xl overflow-hidden bg-gray-50">
+          <div className="relative size-28 rounded-full border-4 border-white shadow-xl overflow-hidden bg-gray-50 group">
             <Avatar
               className="w-full h-full bg-gray-100 border border-gray-200"
               icon={<UserOutlined className="text-gray-400" />}
+              src={resolveAssetUrl(data.profile.avatar_url)}
               size={106}
             >
               {data.profile.avatar_initials}
             </Avatar>
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={uploadAvatar.isPending}
+              className="absolute inset-x-0 bottom-0 h-10 bg-black/70 text-white text-xs font-black flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:opacity-60"
+            >
+              <CameraOutlined /> {uploadAvatar.isPending ? 'Uploading' : 'Photo'}
+            </button>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
           </div>
 
           <div className="flex-1 text-center lg:text-left">
@@ -207,8 +278,20 @@ const ProfilePage: React.FC = () => {
         onOk={() => form.submit()}
         confirmLoading={updateProfile.isPending}
         okText="Save"
+        className="tf-profile-modal"
       >
         <Form form={form} layout="vertical" onFinish={handleSave} className="pt-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Name is required.' }]}>
+              <Input maxLength={30} />
+            </Form.Item>
+            <Form.Item name="surname" label="Surname" rules={[{ required: true, message: 'Surname is required.' }]}>
+              <Input maxLength={30} />
+            </Form.Item>
+          </div>
+          <Form.Item name="email" label="Email">
+            <Input maxLength={100} />
+          </Form.Item>
           <Form.Item name="headline" label="Headline">
             <Input maxLength={150} />
           </Form.Item>

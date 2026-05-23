@@ -1,13 +1,34 @@
 import React, { useState } from 'react';
-import { Layout, ConfigProvider, theme as antdTheme } from 'antd';
+import { Layout, ConfigProvider, theme as antTheme } from 'antd';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { logout } from '../../features/auth/authSlice';
+import { useTheme } from '../../hooks/useTheme';
 import Sidebar from './sidebar';
 import HeaderComponent from './header';
 import useTheme from '../../hooks/useTheme';
 
 const { Content } = Layout;
+
+const lightTokens = {
+  colorPrimary: '#111827',
+  colorBgContainer: '#ffffff',
+  colorBorder: '#e5e7eb',
+  colorText: '#111827',
+  colorTextSecondary: '#6b7280',
+  borderRadius: 12,
+  fontFamily: 'Inter, sans-serif',
+};
+
+const darkTokens = {
+  colorPrimary: '#3b82f6',
+  colorBgContainer: '#111827',
+  colorBorder: '#334155',
+  colorText: '#f9fafb',
+  colorTextSecondary: '#94a3b8',
+  borderRadius: 12,
+  fontFamily: 'Inter, sans-serif',
+};
 
 const MainLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState<boolean>(false);
@@ -24,31 +45,11 @@ const MainLayout: React.FC = () => {
   return (
     <ConfigProvider
       theme={{
-        algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-        token: {
-          colorPrimary: isDark ? '#f3f5f9' : '#000000',
-          borderRadius: 8,
-          fontFamily: 'Inter, sans-serif',
-          colorBgBase: isDark ? '#0d1018' : '#ffffff',
-          colorTextBase: isDark ? '#f3f5f9' : '#0b1220',
-        },
-        components: {
-          Layout: {
-            bodyBg: isDark ? '#0d1018' : '#fbfbfc',
-            siderBg: isDark ? '#161a23' : '#ffffff',
-            headerBg: isDark ? '#161a23' : '#ffffff',
-          },
-          Card: {
-            colorBgContainer: isDark ? '#1d222d' : '#ffffff',
-          },
-          Modal: {
-            contentBg: isDark ? '#1d222d' : '#ffffff',
-            headerBg: isDark ? '#1d222d' : '#ffffff',
-          },
-        },
+        algorithm: isDark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
+        token: isDark ? darkTokens : lightTokens,
       }}
     >
-      <div className="flex h-screen overflow-hidden bg-[#FBFBFC] dark:bg-[#0d1018]">
+      <div className={`flex h-screen overflow-hidden ${isDark ? 'bg-[#0b1020]' : 'bg-[#FBFBFC]'}`}>
         <Sidebar collapsed={collapsed} />
 
         <Layout className="bg-transparent flex flex-col h-full">

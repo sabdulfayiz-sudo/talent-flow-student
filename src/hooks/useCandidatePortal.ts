@@ -5,6 +5,7 @@ import type {
   AIProfileResponse,
   AnalyticsResponse,
   AssessmentsResponse,
+  AvatarUploadResponse,
   CertificateCreatePayload,
   CertificateItem,
   CertificatesResponse,
@@ -164,6 +165,23 @@ export const useNotifications = () => (
   })
 );
 
+export const useMarkAllNotificationsRead = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => (
+      apiFetch<{ ok: boolean; unread_count: number; last_read_at: string }>(
+        '/candidate/portal/notifications/read-all',
+        { method: 'POST' },
+      )
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: portalKeys.notifications });
+      queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
+    },
+  });
+};
+
 export const useLatestResumeReview = () => (
   useQuery({
     queryKey: portalKeys.resumeReview,
@@ -188,6 +206,27 @@ export const useUploadResumeReview = () => {
       queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
       queryClient.invalidateQueries({ queryKey: portalKeys.resumeReview });
       queryClient.invalidateQueries({ queryKey: portalKeys.notifications });
+    },
+  });
+};
+
+export const useUploadProfileAvatar = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      return apiFetch<AvatarUploadResponse>('/candidate/portal/profile/avatar', {
+        method: 'POST',
+        body: formData,
+      });
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(portalKeys.aiProfile, data);
+      queryClient.invalidateQueries({ queryKey: portalKeys.me });
+      queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
     },
   });
 };
@@ -257,6 +296,9 @@ export const useStartSession = () => {
 
       return apiFetch<TestSessionStart>(`/testing/practices/${practiceId}/sessions`, {
         method: 'POST',
+        body: JSON.stringify({
+          device_fingerprint: `${navigator.platform || 'unknown'}:${screen.width}x${screen.height}:${Intl.DateTimeFormat().resolvedOptions().timeZone || 'tz'}`,
+        }),
       });
     },
     onSuccess: (data) => {
