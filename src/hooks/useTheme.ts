@@ -63,5 +63,11 @@ export function useTheme() {
     );
   }, []);
 
-  return { mode, isDark, setTheme };
+  // Quick toggle between light and dark (resolves system to the
+  // opposite of whatever is currently shown).
+  const toggleTheme = useCallback(() => {
+    setTheme(isDark ? 'light' : 'dark');
+  }, [isDark, setTheme]);
+
+  return { mode, isDark, setTheme, toggleTheme };
 }

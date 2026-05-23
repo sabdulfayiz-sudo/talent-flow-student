@@ -4,6 +4,7 @@ import {
   CheckCircleFilled,
   EditOutlined,
   EnvironmentOutlined,
+  LinkedinFilled,
   LinkOutlined,
   MailOutlined,
   PhoneOutlined,
@@ -170,6 +171,18 @@ const ProfilePage: React.FC = () => {
               {data.profile.location && <span className="flex items-center gap-1.5"><EnvironmentOutlined /> {data.profile.location}</span>}
               {data.contact.email && <span className="flex items-center gap-1.5"><MailOutlined /> {data.contact.email}</span>}
               {data.contact.phone && <span className="flex items-center gap-1.5"><PhoneOutlined /> {data.contact.phone}</span>}
+              {data.contact.linkedin_url && (
+                <a
+                  href={data.contact.linkedin_url.startsWith('http')
+                    ? data.contact.linkedin_url
+                    : `https://${data.contact.linkedin_url}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[#0a66c2] px-3 py-1 text-white text-xs font-black hover:bg-[#0a66c2]/90 cursor-pointer"
+                >
+                  <LinkedinFilled /> LinkedIn
+                </a>
+              )}
             </div>
           </div>
 
