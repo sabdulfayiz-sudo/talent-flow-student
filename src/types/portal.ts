@@ -214,7 +214,7 @@ export interface NotificationsResponse {
   unread_count: number;
 }
 
-export interface AvatarUploadResponse extends AIProfileResponse {}
+export type AvatarUploadResponse = AIProfileResponse;
 
 export interface ReportResponse {
   session_id: string;
