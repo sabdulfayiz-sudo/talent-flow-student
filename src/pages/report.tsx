@@ -1,78 +1,54 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeftOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
   CloseCircleFilled,
-  DownloadOutlined,
   ShareAltOutlined,
   TrophyOutlined,
   WarningFilled,
 } from '@ant-design/icons';
-import { Progress, Spin, message } from 'antd';
+import { Progress, Spin } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useReport } from '../hooks/useCandidatePortal';
-import type { ReportResponse } from '../types/portal';
+import { useAppSelector } from '../app/hooks';
+import { apiFetch } from '../lib/api';
+import ShareCardModal from '../components/report/shareCardModal';
 
-const buildReportShareText = (data: ReportResponse) => (
-  `I scored ${data.score}% on ${data.title} in TalentFlow. ${data.percentile_label} overall.`
-);
-
-const downloadReportImage = (data: ReportResponse) => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 675;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  const gradient = ctx.createLinearGradient(0, 0, 1200, 675);
-  gradient.addColorStop(0, '#0f172a');
-  gradient.addColorStop(0.55, '#111827');
-  gradient.addColorStop(1, '#14532d');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 1200, 675);
-
-  ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  ctx.beginPath();
-  ctx.arc(1000, 120, 220, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(140, 610, 180, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '900 52px Inter, Arial, sans-serif';
-  ctx.fillText('TalentFlow Result', 70, 100);
-
-  ctx.font = '800 34px Inter, Arial, sans-serif';
-  ctx.fillText(data.title.slice(0, 42), 70, 165);
-
-  ctx.font = '900 140px Inter, Arial, sans-serif';
-  ctx.fillText(`${data.score}%`, 70, 340);
-
-  ctx.font = '700 28px Inter, Arial, sans-serif';
-  ctx.fillStyle = '#bbf7d0';
-  ctx.fillText(`${data.status === 'passed' ? 'Passed' : 'Needs improvement'} - ${data.percentile_label}`, 75, 395);
-
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.font = '700 26px Inter, Arial, sans-serif';
-  ctx.fillText(`Time: ${data.time_taken_label}`, 75, 470);
-  ctx.fillText(`Completed: ${new Date(data.completed_at).toLocaleDateString()}`, 75, 515);
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '900 30px Inter, Arial, sans-serif';
-  ctx.fillText('talentflow.uz', 75, 600);
-
-  const link = document.createElement('a');
-  link.href = canvas.toDataURL('image/png');
-  link.download = `talentflow-${data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-result.png`;
-  link.click();
-};
+interface ProfileContactSlice {
+  contact?: { linkedin_url?: string | null };
+}
 
 const ReportPage: React.FC = () => {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const { data, isLoading, isError } = useReport(sessionId);
+  const { user } = useAppSelector((state) => state.auth);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [linkedinUrl, setLinkedinUrl] = useState<string | null>(null);
+
+  // Best-effort fetch of the LinkedIn URL so the share card can show it.
+  // Failure is silent — share still works without LinkedIn.
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<ProfileContactSlice>('/candidate/portal/profile')
+      .then((p) => {
+        if (cancelled) return;
+        setLinkedinUrl(p?.contact?.linkedin_url ?? null);
+      })
+      .catch(() => {
+        /* ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const studentName = useMemo(() => {
+    if (!user) return 'Student';
+    const fullName = [user.name, user.surname].filter(Boolean).join(' ').trim();
+    return fullName || user.username || user.email || 'Student';
+  }, [user]);
 
   if (isLoading) {
     return (
@@ -85,20 +61,6 @@ const ReportPage: React.FC = () => {
   if (isError || !data) {
     return <div className="bg-white rounded-3xl border border-rose-100 p-12 text-center text-rose-500">Report is unavailable.</div>;
   }
-
-  const handleShare = async () => {
-    const text = buildReportShareText(data);
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: 'TalentFlow Result', text, url: window.location.href });
-      } else {
-        await navigator.clipboard.writeText(`${text} ${window.location.href}`);
-        message.success('Result link copied.');
-      }
-    } catch {
-      message.info('Sharing was cancelled.');
-    }
-  };
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -119,28 +81,21 @@ const ReportPage: React.FC = () => {
             <div className="mt-5 flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={handleShare}
-                className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-xs font-black text-white hover:bg-gray-800 cursor-pointer"
+                onClick={() => setShareOpen(true)}
+                className="tf-pulse-glow inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-xs font-black text-white hover:bg-gray-800 cursor-pointer"
               >
-                <ShareAltOutlined /> Share result
-              </button>
-              <button
-                type="button"
-                onClick={() => downloadReportImage(data)}
-                className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-black text-gray-900 hover:bg-gray-50 cursor-pointer"
-              >
-                <DownloadOutlined /> Download image
+                <ShareAltOutlined /> Share & download
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 xl:min-w-120">
+          <div className="tf-stagger grid grid-cols-1 sm:grid-cols-3 gap-5 xl:min-w-120">
             {[
               { label: 'Score', value: `${data.score}%`, icon: <TrophyOutlined />, color: 'text-emerald-600 bg-emerald-50' },
               { label: 'Time taken', value: data.time_taken_label, icon: <ClockCircleOutlined />, color: 'text-blue-600 bg-blue-50' },
               { label: 'Percentile', value: data.percentile_label, icon: <TrophyOutlined />, color: 'text-purple-600 bg-purple-50' },
             ].map((item) => (
-              <div key={item.label} className="rounded-3xl border border-gray-100 p-5">
+              <div key={item.label} className="tf-hover-lift animate-in fade-in slide-in-from-bottom-4 duration-500 rounded-3xl border border-gray-100 p-5">
                 <div className={`size-11 rounded-2xl flex items-center justify-center mb-4 ${item.color}`}>{item.icon}</div>
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{item.label}</p>
                 <p className="text-2xl font-black text-gray-900">{item.value}</p>
@@ -237,6 +192,14 @@ const ReportPage: React.FC = () => {
           </section>
         </aside>
       </div>
+
+      <ShareCardModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        data={data}
+        studentName={studentName}
+        linkedinUrl={linkedinUrl}
+      />
     </div>
   );
 };
