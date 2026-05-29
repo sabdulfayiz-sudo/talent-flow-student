@@ -151,7 +151,19 @@ const TestPage: React.FC = () => {
 
   const { data: practice, isLoading: practiceLoading } = usePracticeInfo(practiceId);
   const { data: eligibility, isLoading: eligibilityLoading } = usePracticeEligibility(practiceId);
-  const effectiveSessionId = sessionId;
+  // Derive the active session id from React state OR an existing
+  // `in_progress` session reported by the backend — covers two cases:
+  //   1. fresh start: setSessionId fires from useStartSession.onSuccess,
+  //      the post-start refetch then echoes the same id back as
+  //      `in_progress` and we keep it.
+  //   2. hard refresh during the test: React state is empty but the
+  //      backend still reports `in_progress` so the test page picks
+  //      the session back up instead of reverting to the intro screen.
+  const resumableSessionId =
+    eligibility?.status === 'in_progress' && eligibility.session_id
+      ? eligibility.session_id
+      : undefined;
+  const effectiveSessionId = sessionId ?? resumableSessionId;
   const startSession = useStartSession();
   const { data: progress } = useSessionProgress(effectiveSessionId);
   const nextQuestion = useNextQuestion(
@@ -257,13 +269,18 @@ const TestPage: React.FC = () => {
     onViolation: handleViolationToast,
   });
 
-  // No-resume policy: if the backend says the user already attempted
-  // this practice, redirect to the report.
+  // If the backend says the user already finished or the timer expired,
+  // route straight to the report. `already_attempted` is the legacy
+  // status the backend used to return for both finished AND in-progress
+  // sessions — we keep it here for one release of compatibility but it
+  // should never be returned anymore.
   useEffect(() => {
-    if (
-      eligibility?.session_id &&
-      (eligibility.status === 'finished' || eligibility.status === 'already_attempted')
-    ) {
+    if (!eligibility?.session_id) return;
+    const terminal =
+      eligibility.status === 'finished' ||
+      eligibility.status === 'duration_exceeded' ||
+      eligibility.status === 'already_attempted';
+    if (terminal) {
       navigate(`/reports/${eligibility.session_id}`, { replace: true });
     }
   }, [eligibility, navigate]);
@@ -439,6 +456,7 @@ const TestPage: React.FC = () => {
     !eligibility.can_start &&
     !eligibility.can_resume &&
     eligibility.status !== 'finished' &&
+    eligibility.status !== 'duration_exceeded' &&
     eligibility.status !== 'already_attempted';
 
   if (!effectiveSessionId) {
@@ -505,7 +523,9 @@ const TestPage: React.FC = () => {
               Tests are locked to desktop and laptop browsers. Please switch to a computer to start this assessment.
             </div>
           )}
-          {eligibility?.status === 'already_attempted' && (
+          {(eligibility?.status === 'already_attempted' ||
+            eligibility?.status === 'finished' ||
+            eligibility?.status === 'duration_exceeded') && (
             <div className="mt-4 rounded-2xl bg-rose-50 text-rose-700 p-4 text-sm font-semibold">
               {t('test.alreadyAttempted')}
             </div>
@@ -519,7 +539,8 @@ const TestPage: React.FC = () => {
                 mobileBlocked ||
                 Boolean(isBlocked) ||
                 eligibility?.status === 'already_attempted' ||
-                eligibility?.status === 'finished'
+                eligibility?.status === 'finished' ||
+                eligibility?.status === 'duration_exceeded'
               }
               className="flex items-center justify-center gap-2 bg-black text-white px-6 py-3.5 rounded-2xl font-bold text-[13px] hover:bg-gray-800 transition-all shadow-lg shadow-black/10 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
             >
