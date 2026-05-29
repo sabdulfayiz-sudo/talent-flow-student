@@ -6,7 +6,6 @@ export type IntegritySeverity = 'high' | 'medium' | 'low' | 'info';
 
 export type IntegrityEventType =
   | 'policy_accepted'
-  | 'session_resumed'
   | 'fullscreen_entered'
   | 'fullscreen_exit'
   | 'fullscreen_request_denied'
@@ -24,7 +23,8 @@ export type IntegrityEventType =
   | 'devtools_suspected'
   | 'page_unload_attempt'
   | 'network_offline'
-  | 'multiple_displays_suspected';
+  | 'multiple_displays_suspected'
+  | 'face_not_detected';
 
 export const EVENT_SEVERITY_HINT: Record<string, IntegritySeverity> = {
   fullscreen_exit: 'high',
@@ -46,7 +46,7 @@ export const EVENT_SEVERITY_HINT: Record<string, IntegritySeverity> = {
   policy_accepted: 'low',
   fullscreen_entered: 'low',
   fullscreen_request_denied: 'low',
-  session_resumed: 'low',
+  face_not_detected: 'high',
 };
 
 export const HUMAN_LABELS: Record<string, string> = {
@@ -69,5 +69,5 @@ export const HUMAN_LABELS: Record<string, string> = {
   policy_accepted: 'Integrity policy accepted',
   fullscreen_entered: 'Entered fullscreen',
   fullscreen_request_denied: 'Fullscreen request denied',
-  session_resumed: 'Session resumed',
+  face_not_detected: 'No face detected in camera',
 };

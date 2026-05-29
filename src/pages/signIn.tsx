@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Form, Input, Button, Typography, message, ConfigProvider } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import { loginUser, clearError, type LoginCredentials } from '../features/auth/authSlice';
 
@@ -116,6 +116,13 @@ const SignIn: React.FC = () => {
               </Button>
             </Form.Item>
           </Form>
+
+          <p className="text-center text-sm text-gray-500 mt-6">
+            New to TalentFlow?{' '}
+            <Link to="/signup" className="font-semibold text-black hover:underline">
+              Create an account
+            </Link>
+          </p>
 
         </div>
       </div>

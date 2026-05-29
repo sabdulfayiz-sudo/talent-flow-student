@@ -4,6 +4,7 @@ import type {
   AchievementsResponse,
   AIProfileResponse,
   AnalyticsResponse,
+  ApplyResponse,
   AssessmentsResponse,
   AvatarUploadResponse,
   CertificateCreatePayload,
@@ -25,6 +26,7 @@ import type {
   SubmitAnswerResponse,
   TestSessionProgress,
   TestSessionStart,
+  VacanciesResponse,
 } from '../types/portal';
 
 export const portalKeys = {
@@ -45,6 +47,7 @@ export const portalKeys = {
   leaderboard: (scope: string) => ['candidatePortal', 'leaderboard', scope] as const,
   achievements: ['candidatePortal', 'achievements'] as const,
   practiceCategories: ['candidatePortal', 'practice', 'categories'] as const,
+  vacancies: (search: string) => ['candidatePortal', 'vacancies', search] as const,
 };
 
 export const useCandidateMe = () => (
@@ -226,6 +229,52 @@ export const useUploadProfileAvatar = () => {
     onSuccess: (data) => {
       queryClient.setQueryData(portalKeys.aiProfile, data);
       queryClient.invalidateQueries({ queryKey: portalKeys.me });
+      queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
+    },
+  });
+};
+
+export const useDeleteProfileAvatar = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => (
+      apiFetch<AvatarUploadResponse>('/candidate/portal/profile/avatar', {
+        method: 'DELETE',
+      })
+    ),
+    onSuccess: (data) => {
+      queryClient.setQueryData(portalKeys.aiProfile, data);
+      queryClient.invalidateQueries({ queryKey: portalKeys.me });
+      queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
+    },
+  });
+};
+
+// U6: browse currently-open vacancies the candidate can apply to.
+export const useVacancies = (search: string) => (
+  useQuery({
+    queryKey: portalKeys.vacancies(search),
+    queryFn: () => (
+      apiFetch<VacanciesResponse>(`/candidate/portal/vacancies${buildQuery({ search: search || undefined })}`)
+    ),
+    placeholderData: keepPreviousData,
+  })
+);
+
+// U6: apply to a vacancy. A user may apply to many vacancies but only once
+// each — the backend returns 409 on a duplicate, surfaced to the UI.
+export const useApplyToVacancy = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (vacancyId: string) => (
+      apiFetch<ApplyResponse>(`/candidate/portal/vacancies/${vacancyId}/apply`, {
+        method: 'POST',
+      })
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['candidatePortal', 'vacancies'] });
       queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
     },
   });
