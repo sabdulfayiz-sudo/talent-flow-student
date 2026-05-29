@@ -451,10 +451,13 @@ const TestPage: React.FC = () => {
     progress?.answered_count ?? nextQuestion.data?.progress?.answered_count ?? 0;
   const total = progress?.total_questions ?? practice.question_count;
   const percent = total ? Math.round((answered / total) * 100) : 0;
+  // No-resume policy (A5): a session is only not-started, in-progress
+  // (this tab) or finished. We never offer a resume path — if the backend
+  // says the user can't start and the session isn't terminal, the practice
+  // is simply locked.
   const isBlocked =
     eligibility &&
     !eligibility.can_start &&
-    !eligibility.can_resume &&
     eligibility.status !== 'finished' &&
     eligibility.status !== 'duration_exceeded' &&
     eligibility.status !== 'already_attempted';
@@ -583,7 +586,11 @@ const TestPage: React.FC = () => {
   return (
     <div className="fixed inset-0 bg-[#FBFBFC] dark:bg-[#0d1018] overflow-y-auto">
       <Watermark label={watermarkLabel} />
-      <CameraTile enabled={isTestActive} onStatusChange={setCameraStatus} />
+      <CameraTile
+        enabled={isTestActive}
+        onStatusChange={setCameraStatus}
+        onPresenceLost={(absentForMs) => reportEvent('face_not_detected', { absent_for_ms: absentForMs })}
+      />
 
       {(cameraStatus === 'denied' ||
         cameraStatus === 'unavailable' ||

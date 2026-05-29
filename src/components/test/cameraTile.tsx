@@ -12,7 +12,18 @@ export type CameraStatus =
 interface CameraTileProps {
   enabled: boolean;
   onStatusChange?: (status: CameraStatus, error?: string) => void;
+  // A6: fired when no face has been visible for a sustained window, and
+  // re-fired periodically while the face stays absent so prolonged
+  // absence escalates toward the anti-cheat hard-stop.
+  onPresenceLost?: (absentForMs: number) => void;
+  // Fired once when a face reappears after an absence.
+  onPresenceRestored?: () => void;
 }
+
+// Presence-detection tuning (A6).
+const DETECT_INTERVAL_MS = 2000;
+const ABSENCE_THRESHOLD_MS = 10_000;
+const REFIRE_INTERVAL_MS = 15_000;
 
 /**
  * Live webcam preview pinned to the top-left of the test viewport.
@@ -28,11 +39,27 @@ interface CameraTileProps {
  *    descriptive status so the parent can refuse to start the test.
  *  - On unmount we stop every track.
  */
-const CameraTile: React.FC<CameraTileProps> = ({ enabled, onStatusChange }) => {
+const CameraTile: React.FC<CameraTileProps> = ({
+  enabled,
+  onStatusChange,
+  onPresenceLost,
+  onPresenceRestored,
+}) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [status, setStatus] = useState<CameraStatus>('idle');
   const [error, setError] = useState<string>('');
+  // null = unknown / detection unsupported; true/false once detection runs.
+  const [facePresent, setFacePresent] = useState<boolean | null>(null);
+
+  // Keep the latest callbacks in refs so the detection loop never needs to
+  // restart when the parent re-renders with new closures.
+  const presenceLostRef = useRef(onPresenceLost);
+  const presenceRestoredRef = useRef(onPresenceRestored);
+  useEffect(() => {
+    presenceLostRef.current = onPresenceLost;
+    presenceRestoredRef.current = onPresenceRestored;
+  });
 
   useEffect(() => {
     onStatusChange?.(status, error);
@@ -79,9 +106,9 @@ const CameraTile: React.FC<CameraTileProps> = ({ enabled, onStatusChange }) => {
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+        // NB: do not attach to the <video> here — it isn't mounted until
+        // status flips to 'live'. A dedicated effect attaches the stream
+        // once the element exists (fixes the black-feed bug).
         setStatus('live');
         setError('');
       })
@@ -110,6 +137,80 @@ const CameraTile: React.FC<CameraTileProps> = ({ enabled, onStatusChange }) => {
       stopTracks();
     };
   }, [enabled]);
+
+  // Attach the stream to the <video> once it is actually mounted (status
+  // === 'live'), and kick off autoplay. Without this the srcObject was set
+  // before the element existed, leaving a black tile.
+  useEffect(() => {
+    if (status !== 'live' || !videoRef.current || !streamRef.current) return;
+    const video = videoRef.current;
+    if (video.srcObject !== streamRef.current) {
+      video.srcObject = streamRef.current;
+    }
+    // Autoplay can reject (e.g. policy); muted+playsInline makes it reliable.
+    void video.play().catch(() => undefined);
+  }, [status]);
+
+  // Face presence detection (A6) using the browser FaceDetector API where
+  // available. Absence beyond a sustained window raises an anti-cheat
+  // event via onPresenceLost. Unsupported browsers skip detection silently
+  // (camera presence is still required to start the test).
+  useEffect(() => {
+    if (status !== 'live') return;
+    const Detector = typeof window !== 'undefined' ? window.FaceDetector : undefined;
+    // Detection unsupported — leave facePresent as-is (the camera-present
+    // requirement still gates test start).
+    if (!Detector) return;
+
+    let detector: FaceDetector;
+    try {
+      detector = new Detector({ fastMode: true, maxDetectedFaces: 1 });
+    } catch {
+      return;
+    }
+
+    let stopped = false;
+    let busy = false;
+    let noFaceSince: number | null = null;
+    let lastFiredAt: number | null = null;
+
+    const tick = async () => {
+      const video = videoRef.current;
+      if (stopped || busy || !video || video.readyState < 2) return;
+      busy = true;
+      try {
+        const faces = await detector.detect(video);
+        if (stopped) return;
+        const now = Date.now();
+        if (faces.length > 0) {
+          if (noFaceSince !== null) presenceRestoredRef.current?.();
+          noFaceSince = null;
+          lastFiredAt = null;
+          setFacePresent(true);
+        } else {
+          if (noFaceSince === null) noFaceSince = now;
+          const absentFor = now - noFaceSince;
+          if (absentFor >= ABSENCE_THRESHOLD_MS) {
+            setFacePresent(false);
+            if (lastFiredAt === null || now - lastFiredAt >= REFIRE_INTERVAL_MS) {
+              lastFiredAt = now;
+              presenceLostRef.current?.(absentFor);
+            }
+          }
+        }
+      } catch {
+        // Detection errors are non-fatal — skip this tick.
+      } finally {
+        busy = false;
+      }
+    };
+
+    const interval = window.setInterval(tick, DETECT_INTERVAL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, [status]);
 
   if (!enabled || status === 'idle') return null;
 
@@ -151,6 +252,14 @@ const CameraTile: React.FC<CameraTileProps> = ({ enabled, onStatusChange }) => {
             <span className="text-[9px] font-bold text-white uppercase tracking-widest">
               Proctored
             </span>
+          </div>
+        )}
+
+        {status === 'live' && facePresent === false && (
+          <div className="absolute inset-x-0 bottom-0 bg-rose-600/90 px-2 py-1">
+            <p className="text-[10px] font-bold text-white uppercase tracking-widest text-center">
+              No face detected
+            </p>
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   CameraOutlined,
   CheckCircleFilled,
+  DeleteOutlined,
   EditOutlined,
   EnvironmentOutlined,
   LinkedinFilled,
@@ -14,7 +15,13 @@ import {
 } from '@ant-design/icons';
 import { Avatar, Form, Input, Modal, Progress, Switch, message } from 'antd';
 import { apiFetch, resolveAssetUrl } from '../lib/api';
-import { useAIProfile, useAnalytics, useUpdateAIProfile, useUploadProfileAvatar } from '../hooks/useCandidatePortal';
+import {
+  useAIProfile,
+  useAnalytics,
+  useDeleteProfileAvatar,
+  useUpdateAIProfile,
+  useUploadProfileAvatar,
+} from '../hooks/useCandidatePortal';
 import type { ProfileUpdatePayload } from '../types/portal';
 import { useAppDispatch } from '../app/hooks';
 import { updateUser } from '../features/auth/authSlice';
@@ -29,6 +36,7 @@ const ProfilePage: React.FC = () => {
   const dispatch = useAppDispatch();
   const updateProfile = useUpdateAIProfile();
   const uploadAvatar = useUploadProfileAvatar();
+  const deleteAvatar = useDeleteProfileAvatar();
   const [isEditing, setIsEditing] = useState(false);
   const [form] = Form.useForm<ProfileUpdatePayload>();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -118,6 +126,33 @@ const ProfilePage: React.FC = () => {
     }
   };
 
+  const handleAvatarDelete = () => {
+    Modal.confirm({
+      title: 'Remove profile photo?',
+      content: 'Your avatar will reset to the default initials.',
+      okText: 'Remove',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          const updated = await deleteAvatar.mutateAsync();
+          const savedUser = localStorage.getItem('user');
+          if (savedUser) {
+            const parsed = JSON.parse(savedUser);
+            localStorage.setItem('user', JSON.stringify({
+              ...parsed,
+              avatar_url: updated.profile.avatar_url ?? null,
+            }));
+          }
+          dispatch(updateUser({ avatar_url: updated.profile.avatar_url ?? null }));
+          message.success('Profile image removed.');
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : 'Unable to remove image.');
+        }
+      },
+    });
+  };
+
   if (isLoading) {
     return <div className="p-20 text-center text-gray-400 animate-pulse">Loading profile...</div>;
   }
@@ -140,14 +175,27 @@ const ProfilePage: React.FC = () => {
             >
               {data.profile.avatar_initials}
             </Avatar>
-            <button
-              type="button"
-              onClick={() => avatarInputRef.current?.click()}
-              disabled={uploadAvatar.isPending}
-              className="absolute inset-x-0 bottom-0 h-10 bg-black/70 text-white text-xs font-black flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:opacity-60"
-            >
-              <CameraOutlined /> {uploadAvatar.isPending ? 'Uploading' : 'Photo'}
-            </button>
+            <div className="absolute inset-x-0 bottom-0 flex opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={uploadAvatar.isPending || deleteAvatar.isPending}
+                className="flex-1 h-9 bg-black/70 text-white text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer disabled:opacity-60"
+              >
+                <CameraOutlined /> {uploadAvatar.isPending ? '…' : 'Photo'}
+              </button>
+              {data.profile.avatar_url && (
+                <button
+                  type="button"
+                  onClick={handleAvatarDelete}
+                  disabled={uploadAvatar.isPending || deleteAvatar.isPending}
+                  aria-label="Remove profile photo"
+                  className="w-9 h-9 bg-rose-600/80 text-white text-[11px] font-black flex items-center justify-center cursor-pointer disabled:opacity-60"
+                >
+                  <DeleteOutlined />
+                </button>
+              )}
+            </div>
             <input
               ref={avatarInputRef}
               type="file"

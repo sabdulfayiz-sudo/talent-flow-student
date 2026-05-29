@@ -6,6 +6,7 @@ import {
   CrownOutlined,
   FileSearchOutlined,
   FileTextOutlined,
+  ShopOutlined,
   QuestionCircleOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
@@ -35,6 +36,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
   const primaryItems: NavItem[] = useMemo(
     () => [
       { label: t('nav.dashboard'), icon: <AppstoreOutlined />, path: '/' },
+      { label: t('nav.jobs'), icon: <ShopOutlined />, path: '/jobs' },
       { label: t('nav.assessments'), icon: <FileTextOutlined />, path: '/my-assessments' },
       { label: t('nav.practice'), icon: <BulbOutlined />, path: '/practice', badge: 'New' },
       { label: t('nav.aiInterview'), icon: <RobotOutlined />, path: '/ai-interview', badge: 'AI' },

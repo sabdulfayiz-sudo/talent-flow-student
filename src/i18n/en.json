@@ -21,6 +21,7 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "jobs": "Open Roles",
     "assessments": "Assessments",
     "practice": "Practice",
     "aiInterview": "AI Interview",

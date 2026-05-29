@@ -11,6 +11,7 @@ export interface User {
   email: string;
   group_name?: string;
   avatar_url?: string | null;
+  must_change_password?: boolean;
 }
 
 export interface AuthState {
@@ -19,7 +20,25 @@ export interface AuthState {
   isAuthenticated: boolean;
   loading: boolean;
   error: string | null;
+  // U2: when true the app forces a "set new password" screen before any
+  // other route. Cleared after a successful change.
+  mustChangePassword: boolean;
 }
+
+export interface SessionPayload {
+  user: User;
+  access_token: string;
+  refresh_token?: string;
+  must_change_password?: boolean;
+}
+
+const persistSession = (payload: SessionPayload) => {
+  localStorage.setItem('token', payload.access_token);
+  localStorage.setItem('user', JSON.stringify(payload.user));
+  if (payload.refresh_token) {
+    localStorage.setItem('refresh_token', payload.refresh_token);
+  }
+};
 
 export interface LoginCredentials {
   email?: string;
@@ -30,7 +49,7 @@ export interface LoginCredentials {
 const API_URL = import.meta.env.VITE_API_URL
 
 export const loginUser = createAsyncThunk<
-  { user: User; access_token: string }, // Return type of the payload creator
+  SessionPayload, // Return type of the payload creator
   LoginCredentials, // First argument to the payload creator
   { rejectValue: string } // Types for ThunkAPI
 >(
@@ -49,13 +68,14 @@ export const loginUser = createAsyncThunk<
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        return rejectWithValue(errorData.message || 'Login failed. Please check your credentials.');
+        return rejectWithValue(
+          errorData.detail || errorData.message || 'Login failed. Please check your credentials.',
+        );
       }
 
-      const data = await response.json();
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      return data; 
+      const data = (await response.json()) as SessionPayload;
+      persistSession(data);
+      return data;
     } catch {
       return rejectWithValue('Network error or server is unreachable.');
     }
@@ -63,13 +83,15 @@ export const loginUser = createAsyncThunk<
 );
 
 const savedUser = localStorage.getItem('user');
+const parsedUser: User | null = savedUser ? JSON.parse(savedUser) : null;
 
 const initialState: AuthState = {
-  user: savedUser ? JSON.parse(savedUser) : null,
+  user: parsedUser,
   token: localStorage.getItem('token'),
   isAuthenticated: !!savedUser,
   loading: false,
   error: null,
+  mustChangePassword: Boolean(parsedUser?.must_change_password),
 };
 
 // 4. Slice
@@ -81,18 +103,39 @@ const authSlice = createSlice({
       const user = localStorage.getItem('user');
       const token = localStorage.getItem('token');      
       if (user && token) {
-        state.user = JSON.parse(user);
+        const parsed: User = JSON.parse(user);
+        state.user = parsed;
         state.token = token;
         state.isAuthenticated = true;
+        state.mustChangePassword = Boolean(parsed.must_change_password);
       }
       state.loading = false;
+    },
+    // Used by the sign-up flow (U3) and any non-thunk auth entry point.
+    setSession: (state, action: PayloadAction<SessionPayload>) => {
+      persistSession(action.payload);
+      state.user = action.payload.user;
+      state.token = action.payload.access_token;
+      state.isAuthenticated = true;
+      state.error = null;
+      state.mustChangePassword = Boolean(action.payload.must_change_password);
+    },
+    // U2: clear the forced-password-change flag after a successful change.
+    clearMustChangePassword: (state) => {
+      state.mustChangePassword = false;
+      if (state.user) {
+        state.user = { ...state.user, must_change_password: false };
+        localStorage.setItem('user', JSON.stringify(state.user));
+      }
     },
     logout: (state) => {
       state.user = null;
       state.isAuthenticated = false;
       state.error = null;
+      state.mustChangePassword = false;
       localStorage.removeItem('user');
       localStorage.removeItem('token');
+      localStorage.removeItem('refresh_token');
     },
     clearError: (state) => {
       state.error = null;
@@ -109,11 +152,12 @@ const authSlice = createSlice({
         state.loading = true;
         state.error = null;
       })
-      .addCase(loginUser.fulfilled, (state, action: PayloadAction<{ user: User; access_token: string }>) => {
+      .addCase(loginUser.fulfilled, (state, action: PayloadAction<SessionPayload>) => {
         state.loading = false;
         state.isAuthenticated = true;
         state.user = action.payload.user;
         state.token = action.payload.access_token;
+        state.mustChangePassword = Boolean(action.payload.must_change_password);
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;
@@ -122,5 +166,12 @@ const authSlice = createSlice({
   },
 });
 
-export const { initializeAuth, logout, clearError, updateUser } = authSlice.actions;
+export const {
+  initializeAuth,
+  logout,
+  clearError,
+  updateUser,
+  setSession,
+  clearMustChangePassword,
+} = authSlice.actions;
 export default authSlice.reducer;

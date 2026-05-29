@@ -216,6 +216,33 @@ export interface NotificationsResponse {
 
 export type AvatarUploadResponse = AIProfileResponse;
 
+export interface VacancyItem {
+  id: string;
+  job_name: string;
+  job_description: string | null;
+  tag: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  company_id: string | null;
+  company_name: string | null;
+  has_applied: boolean;
+}
+
+export interface VacanciesResponse {
+  items: VacancyItem[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface ApplyResponse {
+  id: string;
+  vacancy_id: string;
+  status: string;
+  company_name: string | null;
+  applied_at: string;
+}
+
 export interface ReportResponse {
   session_id: string;
   practice_id: string;
@@ -282,7 +309,9 @@ export interface PracticeInfo {
 export interface PracticeEligibility {
   status: string;
   can_start: boolean;
-  can_resume: boolean;
+  // Retained only for backend wire-compat — the no-resume policy (A5)
+  // means the client never acts on this.
+  can_resume?: boolean;
   session_id: string | null;
   reason: string | null;
 }
