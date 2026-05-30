@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ArrowLeftOutlined,
   CheckCircleFilled,
@@ -10,39 +10,21 @@ import {
 } from '@ant-design/icons';
 import { Progress, Spin } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useReport } from '../hooks/useCandidatePortal';
+import { useAIProfile, useReport } from '../hooks/useCandidatePortal';
 import { useAppSelector } from '../app/hooks';
-import { apiFetch } from '../lib/api';
 import ShareCardModal from '../components/report/shareCardModal';
-
-interface ProfileContactSlice {
-  contact?: { linkedin_url?: string | null };
-}
 
 const ReportPage: React.FC = () => {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const { data, isLoading, isError } = useReport(sessionId);
+  const { data: aiProfile } = useAIProfile();
   const { user } = useAppSelector((state) => state.auth);
   const [shareOpen, setShareOpen] = useState(false);
-  const [linkedinUrl, setLinkedinUrl] = useState<string | null>(null);
-
-  // Best-effort fetch of the LinkedIn URL so the share card can show it.
-  // Failure is silent — share still works without LinkedIn.
-  useEffect(() => {
-    let cancelled = false;
-    apiFetch<ProfileContactSlice>('/candidate/portal/profile')
-      .then((p) => {
-        if (cancelled) return;
-        setLinkedinUrl(p?.contact?.linkedin_url ?? null);
-      })
-      .catch(() => {
-        /* ignore */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // The share card shows a LinkedIn link if the student has one on
+  // file. Pulled from the AI-profile payload (already cached) rather
+  // than a separate request.
+  const linkedinUrl = aiProfile?.contact?.linkedin_url ?? null;
 
   const studentName = useMemo(() => {
     if (!user) return 'Student';

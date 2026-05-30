@@ -147,6 +147,13 @@ const TestPage: React.FC = () => {
   const questionStartedAtRef = useRef(0);
   const autoSubmittedRef = useRef(false);
   const abandonFiredRef = useRef(false);
+  // Wall-clock timestamp of when the session was created. Used to
+  // suppress spurious tab-hidden / fullscreen-change events during
+  // the first ~2s of the test (camera permission prompt, fullscreen
+  // transition, etc.) which the OS sometimes briefly hides our tab
+  // for and would otherwise be treated as cheating.
+  const sessionStartedAtRef = useRef(0);
+  const START_GRACE_MS = 2000;
   const mobileBlocked = useMemo(() => isMobileTestDevice(), []);
 
   const { data: practice, isLoading: practiceLoading } = usePracticeInfo(practiceId);
@@ -308,8 +315,17 @@ const TestPage: React.FC = () => {
       fireIntegrityBeacon(effectiveSessionId, eventType);
     };
 
+    const withinGrace = () => {
+      const startedAt = sessionStartedAtRef.current;
+      return startedAt > 0 && Date.now() - startedAt < START_GRACE_MS;
+    };
+
     const onVisibility = () => {
-      if (document.hidden) void recordCheatingAndStop('tab_hidden', { reason: 'left_test_tab' });
+      if (!document.hidden) return;
+      // Ignore briefly-hidden during start-up: OS permission prompts
+      // (camera/fullscreen) can momentarily flip document.hidden true.
+      if (withinGrace()) return;
+      void recordCheatingAndStop('tab_hidden', { reason: 'left_test_tab' });
     };
     const onPageHide = () => {
       fire();
@@ -318,8 +334,10 @@ const TestPage: React.FC = () => {
       fire();
     };
     const onFullscreenChange = () => {
-      // Exiting fullscreen during an active test is treated as leaving.
-      if (!document.fullscreenElement) {
+      // Exiting fullscreen during an active test is treated as leaving,
+      // except during the start-up grace window where the transition
+      // itself fires this event before the user can even see the page.
+      if (!document.fullscreenElement && !withinGrace()) {
         void recordCheatingAndStop('fullscreen_exit', { reason: 'fullscreen_closed' });
       }
     };
@@ -353,7 +371,10 @@ const TestPage: React.FC = () => {
     setGateOpen(true);
   };
 
-  const runStart = async (opts: { requestFullscreen: boolean }) => {
+  const runStart = async (opts: {
+    requestFullscreen: boolean;
+    cameraAvailable: boolean;
+  }) => {
     if (!practiceId) return;
     if (mobileBlocked) {
       message.error('Tests can only be started from a desktop or laptop browser.');
@@ -379,9 +400,22 @@ const TestPage: React.FC = () => {
       const session = await startSession.mutateAsync(practiceId);
       setSessionId(session.session_id);
       setGateOpen(false);
+      // Mark the session-start moment so the abandon listeners can
+      // ignore spurious focus/visibility events triggered by the
+      // fullscreen / camera permission prompts during start-up.
+      sessionStartedAtRef.current = Date.now();
       reportEvent('policy_accepted', {
         request_fullscreen: opts.requestFullscreen,
+        camera_available: opts.cameraAvailable,
       });
+      if (!opts.cameraAvailable) {
+        // Camera was denied or no device — proctoring tile won't run.
+        // Logged as info so it does NOT count as a strike on the
+        // backend's two-strikes-and-out policy.
+        reportEvent('camera_unavailable', {
+          reason: 'preflight_denied_or_missing',
+        });
+      }
     } catch (error) {
       if (document.fullscreenElement) {
         await document.exitFullscreen().catch(() => undefined);
@@ -596,9 +630,9 @@ const TestPage: React.FC = () => {
         cameraStatus === 'unavailable' ||
         cameraStatus === 'error') && (
         <div className="fixed top-4 left-56 right-4 z-50">
-          <div className="rounded-2xl border-2 border-rose-500 bg-rose-50 text-rose-900 p-3 flex items-start gap-2 text-xs font-bold shadow-lg">
-            <WarningFilled className="mt-0.5 text-base text-rose-600" />
-            <span>{t('test.cameraDenied')}</span>
+          <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 text-amber-900 p-3 flex items-start gap-2 text-xs font-bold shadow-lg">
+            <WarningFilled className="mt-0.5 text-base text-amber-600" />
+            <span>{t('test.cameraOffHint')}</span>
           </div>
         </div>
       )}
