@@ -106,27 +106,6 @@ const fireAbandonBeacon = (sessionId: string) => {
   }
 };
 
-const fireIntegrityBeacon = (sessionId: string, eventType: string) => {
-  const token = localStorage.getItem('token');
-  const url = `${API_URL}/testing/sessions/${sessionId}/events`;
-  try {
-    fetch(url, {
-      method: 'POST',
-      keepalive: true,
-      headers: token
-        ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-        : { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        event_type: eventType,
-        severity: 'critical',
-        payload: { source: 'test_page' },
-      }),
-    }).catch(() => undefined);
-  } catch {
-    // best effort during unload
-  }
-};
-
 const TestPage: React.FC = () => {
   const { practiceId } = useParams();
   const navigate = useNavigate();
@@ -158,19 +137,13 @@ const TestPage: React.FC = () => {
 
   const { data: practice, isLoading: practiceLoading } = usePracticeInfo(practiceId);
   const { data: eligibility, isLoading: eligibilityLoading } = usePracticeEligibility(practiceId);
-  // Derive the active session id from React state OR an existing
-  // `in_progress` session reported by the backend — covers two cases:
-  //   1. fresh start: setSessionId fires from useStartSession.onSuccess,
-  //      the post-start refetch then echoes the same id back as
-  //      `in_progress` and we keep it.
-  //   2. hard refresh during the test: React state is empty but the
-  //      backend still reports `in_progress` so the test page picks
-  //      the session back up instead of reverting to the intro screen.
-  const resumableSessionId =
-    eligibility?.status === 'in_progress' && eligibility.session_id
-      ? eligibility.session_id
-      : undefined;
-  const effectiveSessionId = sessionId ?? resumableSessionId;
+  // Strict no-resume policy: the active session id is ONLY what React
+  // state holds (set by `setSessionId` after a fresh POST /sessions).
+  // We never silently pick up an `in_progress` session reported by the
+  // eligibility endpoint — that would re-open an attempt the candidate
+  // has already left. Orphan in-progress sessions are detected on mount
+  // and explicitly finalized via /abandon (see useEffect below).
+  const effectiveSessionId = sessionId;
   const startSession = useStartSession();
   const { data: progress } = useSessionProgress(effectiveSessionId);
   const nextQuestion = useNextQuestion(
@@ -235,26 +208,34 @@ const TestPage: React.FC = () => {
     navigate(`/reports/${effectiveSessionId}`, { replace: true });
   }, [effectiveSessionId, navigate]);
 
-  const recordCheatingAndStop = useCallback(
-    async (eventType: string, payload?: Record<string, unknown>) => {
+  // No-resume policy: when the candidate leaves the test surface
+  // (tab switch, fullscreen exit, manual nav-away), the attempt is
+  // finalized via POST /abandon. The session is marked finished with
+  // whatever points have been earned so far; the candidate cannot
+  // come back. We deliberately do NOT route this through the
+  // strike/violation system (POST /events) because leaving the page
+  // isn't a cheating event — it's an explicit use of the single
+  // attempt. The strike system is reserved for in-test cheat actions
+  // (copy, paste, devtools, right-click, etc).
+  const abandonAndStop = useCallback(
+    async (reasonTag: string) => {
       if (!effectiveSessionId || autoSubmittedRef.current) return;
       autoSubmittedRef.current = true;
       try {
-        await apiFetch(`/testing/sessions/${effectiveSessionId}/events`, {
+        await apiFetch(`/testing/sessions/${effectiveSessionId}/abandon`, {
           method: 'POST',
-          body: JSON.stringify({
-            event_type: eventType,
-            severity: 'critical',
-            payload: payload ?? {},
-          }),
         });
       } catch {
-        fireIntegrityBeacon(effectiveSessionId, eventType);
+        // Best-effort: use the keepalive-style beacon. If even that
+        // fails, the next page mount will detect the orphan and
+        // finalize it via the orphan-session useEffect below.
+        fireAbandonBeacon(effectiveSessionId);
       }
-      message.error('Integrity violation detected. Your test was closed with a zero score.');
+      message.warning(t('test.attemptEnded'));
+      void reasonTag; // diagnostic only; not sent to server
       navigate(`/reports/${effectiveSessionId}`, { replace: true });
     },
-    [effectiveSessionId, navigate],
+    [effectiveSessionId, navigate, t],
   );
 
   // Soft toast on logged violations — replaces the giant penalty banner.
@@ -292,6 +273,25 @@ const TestPage: React.FC = () => {
     }
   }, [eligibility, navigate]);
 
+  // Orphan in-progress session: the candidate hard-refreshed, lost the
+  // tab, or otherwise returned to a session that's still flagged
+  // `in_progress` in the DB. Per the strict no-resume policy, we do
+  // NOT silently resume — we explicitly finalize it as abandoned and
+  // route to the report. Guarded by `sessionId` so we don't trip on
+  // the just-started session we own in this tab.
+  useEffect(() => {
+    if (!eligibility) return;
+    if (sessionId) return; // we own a fresh session in this tab
+    if (eligibility.status !== 'in_progress') return;
+    if (!eligibility.session_id) return;
+    const orphanId = eligibility.session_id;
+    void apiFetch(`/testing/sessions/${orphanId}/abandon`, { method: 'POST' })
+      .catch(() => undefined)
+      .finally(() => {
+        navigate(`/reports/${orphanId}`, { replace: true });
+      });
+  }, [eligibility, sessionId, navigate]);
+
   useEffect(() => {
     if (nextQuestion.data?.event === 'question_data') {
       questionStartedAtRef.current = Date.now();
@@ -304,15 +304,19 @@ const TestPage: React.FC = () => {
   // Abandon-beacon: any time the test is active and the user leaves
   // (closes the tab, navigates away, switches windows, exits
   // fullscreen) we fire `POST /sessions/{id}/abandon` so the backend
-  // immediately marks the session finished. Per the no-resume policy,
-  // this is intentional and irrevocable.
+  // immediately marks the session finished. Per the strict no-resume
+  // policy this is intentional and irrevocable.
   useEffect(() => {
     if (!isTestActive || !effectiveSessionId) return;
 
-    const fire = (eventType = 'page_unload_attempt') => {
+    const fireUnload = () => {
       if (abandonFiredRef.current) return;
       abandonFiredRef.current = true;
-      fireIntegrityBeacon(effectiveSessionId, eventType);
+      // pagehide/beforeunload: regular fetch is cancelled by the
+      // browser. `fireAbandonBeacon` uses keepalive: true so the
+      // POST /abandon survives the unload and reliably finalizes the
+      // session server-side.
+      fireAbandonBeacon(effectiveSessionId);
     };
 
     const withinGrace = () => {
@@ -325,20 +329,20 @@ const TestPage: React.FC = () => {
       // Ignore briefly-hidden during start-up: OS permission prompts
       // (camera/fullscreen) can momentarily flip document.hidden true.
       if (withinGrace()) return;
-      void recordCheatingAndStop('tab_hidden', { reason: 'left_test_tab' });
+      void abandonAndStop('tab_hidden');
     };
     const onPageHide = () => {
-      fire();
+      fireUnload();
     };
     const onBeforeUnload = () => {
-      fire();
+      fireUnload();
     };
     const onFullscreenChange = () => {
       // Exiting fullscreen during an active test is treated as leaving,
       // except during the start-up grace window where the transition
       // itself fires this event before the user can even see the page.
       if (!document.fullscreenElement && !withinGrace()) {
-        void recordCheatingAndStop('fullscreen_exit', { reason: 'fullscreen_closed' });
+        void abandonAndStop('fullscreen_exit');
       }
     };
 
@@ -352,7 +356,7 @@ const TestPage: React.FC = () => {
       window.removeEventListener('beforeunload', onBeforeUnload);
       document.removeEventListener('fullscreenchange', onFullscreenChange);
     };
-  }, [isTestActive, effectiveSessionId, recordCheatingAndStop]);
+  }, [isTestActive, effectiveSessionId, abandonAndStop]);
 
   // Auto-dismiss soft toast after a beat so the test surface doesn't
   // accumulate banners.
@@ -494,16 +498,20 @@ const TestPage: React.FC = () => {
     progress?.answered_count ?? nextQuestion.data?.progress?.answered_count ?? 0;
   const total = progress?.total_questions ?? practice.question_count;
   const percent = total ? Math.round((answered / total) * 100) : 0;
-  // No-resume policy (A5): a session is only not-started, in-progress
-  // (this tab) or finished. We never offer a resume path — if the backend
-  // says the user can't start and the session isn't terminal, the practice
-  // is simply locked.
+  // Strict no-resume: a session is only not-started, in-progress in
+  // THIS tab, or finished. There is no resume path — `in_progress`
+  // from the backend means the candidate left a previous attempt and
+  // we treat it as terminal here (the orphan useEffect above is
+  // already firing /abandon + navigating to the report).
+  const attemptTerminal =
+    eligibility?.status === 'finished' ||
+    eligibility?.status === 'duration_exceeded' ||
+    eligibility?.status === 'already_attempted' ||
+    eligibility?.status === 'in_progress';
   const isBlocked =
     eligibility &&
     !eligibility.can_start &&
-    eligibility.status !== 'finished' &&
-    eligibility.status !== 'duration_exceeded' &&
-    eligibility.status !== 'already_attempted';
+    !attemptTerminal;
 
   if (!effectiveSessionId) {
     return (
@@ -569,9 +577,7 @@ const TestPage: React.FC = () => {
               Tests are locked to desktop and laptop browsers. Please switch to a computer to start this assessment.
             </div>
           )}
-          {(eligibility?.status === 'already_attempted' ||
-            eligibility?.status === 'finished' ||
-            eligibility?.status === 'duration_exceeded') && (
+          {attemptTerminal && (
             <div className="mt-4 rounded-2xl bg-rose-50 text-rose-700 p-4 text-sm font-semibold">
               {t('test.alreadyAttempted')}
             </div>
@@ -584,9 +590,7 @@ const TestPage: React.FC = () => {
                 startSession.isPending ||
                 mobileBlocked ||
                 Boolean(isBlocked) ||
-                eligibility?.status === 'already_attempted' ||
-                eligibility?.status === 'finished' ||
-                eligibility?.status === 'duration_exceeded'
+                attemptTerminal
               }
               className="flex items-center justify-center gap-2 bg-black text-white px-6 py-3.5 rounded-2xl font-bold text-[13px] hover:bg-gray-800 transition-all shadow-lg shadow-black/10 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
             >
