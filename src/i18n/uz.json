@@ -21,6 +21,8 @@
   },
   "nav": {
     "dashboard": "Bosh sahifa",
+    "jobs": "Ochiq vakansiyalar",
+    "myApplications": "Mening arizalarim",
     "assessments": "Testlar",
     "practice": "Mashq",
     "aiInterview": "AI suhbat",
@@ -116,6 +118,8 @@
     "cameraNoDevice": "Kamera topilmadi. Testni topshirish uchun ishlaydigan kamera kerak.",
     "cameraUnavailable": "Ushbu brauzer kamera APIni qoʻllab-quvvatlamaydi. Chrome, Edge yoki Firefoxni sinab koʻring.",
     "cameraRetry": "Kamerani qayta tekshirish",
+    "cameraOffTitle": "Kamera mavjud emas — proktoring oʻchirilgan",
+    "cameraOffHint": "Testni topshirish mumkin, lekin admin urinish kamerasiz oʻtganini koʻradi.",
     "rightClickWarn": "Oʻng tugma yoziladi.",
     "tabWarn": "Yorliqni almashtirish testni yakunlaydi."
   },
@@ -164,5 +168,36 @@
     "notFound": "Topilmadi.",
     "unauthorized": "Iltimos, qayta tizimga kiring.",
     "aiUnavailable": "AI hozir mavjud emas. Keyinroq urinib koʻring."
+  },
+  "jobs": {
+    "title": "Ochiq vakansiyalar",
+    "subtitle": "Ochiq vakansiyalarni koʻring, statusingizni kuzating va tayinlangan testni topshiring.",
+    "noResults": "Hozircha ochiq vakansiyalar yoʻq.",
+    "apply": "Topshirish",
+    "applying": "Yuborilmoqda…",
+    "applied": "Topshirildi",
+    "openStatus": "Ochiq",
+    "closed": "Yopiq",
+    "candidates": "nomzodlar",
+    "description": "Vakansiya haqida",
+    "assignedTest": "Tayinlangan test",
+    "startAssignedTest": "Tayinlangan testni boshlash",
+    "yourStatus": "Sizning arizangiz",
+    "notAppliedYet": "Siz hali ariza topshirmadingiz.",
+    "viewDetails": "Batafsil",
+    "difficulty": "Murakkablik",
+    "deadline": "Muddat",
+    "openDetails": "Vakansiyani ochish",
+    "myApplications": "Mening arizalarim",
+    "myApplicationsSubtitle": "Barcha topshirgan vakansiyalaringiz boʻyicha bosqichingiz.",
+    "noApplications": "Siz hali hech bir vakansiyaga ariza topshirmadingiz. «Ochiq vakansiyalar»ga oʻting.",
+    "browseRoles": "Vakansiyalarni koʻrish",
+    "tabs": {
+      "all": "Barchasi",
+      "inProgress": "Jarayonda",
+      "completed": "Yakunlangan",
+      "rejected": "Rad etilgan"
+    },
+    "statusUpdated": "Status yangilandi"
   }
 }

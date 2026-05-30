@@ -16,18 +16,22 @@ interface IntegrityGateProps {
   studentName: string;
   durationMinutes: number;
   questionCount: number;
-  onAccept: (opts: { requestFullscreen: boolean }) => Promise<void> | void;
+  onAccept: (opts: {
+    requestFullscreen: boolean;
+    cameraAvailable: boolean;
+  }) => Promise<void> | void;
   onCancel: () => void;
 }
 
 /**
  * Pre-test integrity policy gate.
  *
- * Adds a camera-permission preflight to the prior policy ack. The
- * student must (a) acknowledge the no-resume policy, (b) grant
- * camera access, before the "Start test" button enables. Camera
- * stream is released as soon as the preflight finishes — the live
- * proctoring tile re-acquires it inside the test page itself.
+ * The student must acknowledge the no-resume policy. A camera check
+ * runs in parallel — if it succeeds the live proctoring tile shows
+ * up during the test, if it fails (denied / no device / unsupported
+ * browser) the test still starts, but a `camera_unavailable` info
+ * event is logged so admins know proctoring was off. Camera presence
+ * is NOT a hard requirement.
  */
 const IntegrityGate: React.FC<IntegrityGateProps> = ({
   open,
@@ -41,16 +45,13 @@ const IntegrityGate: React.FC<IntegrityGateProps> = ({
   const [accepted, setAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cameraStatus, setCameraStatus] = useState<CameraCheckStatus>('idle');
-  const [cameraError, setCameraError] = useState<string>('');
 
   const runCameraCheck = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraStatus('unavailable');
-      setCameraError(t('test.cameraUnavailable'));
       return;
     }
     setCameraStatus('checking');
-    setCameraError('');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
@@ -60,19 +61,11 @@ const IntegrityGate: React.FC<IntegrityGateProps> = ({
       setCameraStatus('ok');
     } catch (err: unknown) {
       const name = (err as DOMException)?.name ?? 'Error';
-      if (
-        name === 'NotAllowedError' ||
-        name === 'PermissionDeniedError' ||
-        name === 'SecurityError'
-      ) {
-        setCameraStatus('denied');
-        setCameraError(t('test.cameraDenied'));
-      } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+      if (name === 'NotFoundError' || name === 'OverconstrainedError') {
         setCameraStatus('unavailable');
-        setCameraError(t('test.cameraNoDevice'));
       } else {
+        // Treat any other failure (denied, security, etc.) as denied.
         setCameraStatus('denied');
-        setCameraError(t('test.cameraDenied'));
       }
     }
   };
@@ -87,7 +80,6 @@ const IntegrityGate: React.FC<IntegrityGateProps> = ({
     if (!open) {
       queueMicrotask(() => {
         setCameraStatus('idle');
-        setCameraError('');
         setAccepted(false);
       });
     }
@@ -95,16 +87,20 @@ const IntegrityGate: React.FC<IntegrityGateProps> = ({
   }, [open]);
 
   const handleAccept = async () => {
-    if (!accepted || cameraStatus !== 'ok') return;
+    if (!accepted || cameraStatus === 'checking' || submitting) return;
     setSubmitting(true);
     try {
-      await onAccept({ requestFullscreen: true });
+      await onAccept({
+        requestFullscreen: true,
+        cameraAvailable: cameraStatus === 'ok',
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const canStart = accepted && cameraStatus === 'ok' && !submitting;
+  // Camera is best-effort: accept + not-currently-checking is enough.
+  const canStart = accepted && cameraStatus !== 'checking' && !submitting;
 
   return (
     <Modal
@@ -143,14 +139,16 @@ const IntegrityGate: React.FC<IntegrityGateProps> = ({
           <span>{t('test.proctoredBody')}</span>
         </div>
 
-        {/* Camera preflight */}
+        {/* Camera preflight — non-blocking. We still surface the result
+            so the candidate knows whether proctoring is on, but a
+            missing / denied camera does NOT block the test. */}
         <div
           className={`rounded-2xl p-4 border text-sm flex items-start gap-3 ${
             cameraStatus === 'ok'
               ? 'bg-emerald-50 border-emerald-100 text-emerald-900'
               : cameraStatus === 'checking'
               ? 'bg-gray-50 border-gray-200 text-gray-700'
-              : 'bg-rose-50 border-rose-200 text-rose-900'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
           }`}
         >
           <div className="mt-0.5 text-lg">
@@ -168,14 +166,14 @@ const IntegrityGate: React.FC<IntegrityGateProps> = ({
                 ? t('test.cameraReady')
                 : cameraStatus === 'checking'
                 ? t('test.cameraChecking')
-                : t('test.cameraRequired')}
+                : t('test.cameraOffTitle')}
             </p>
             <p className="text-xs leading-relaxed opacity-90">
               {cameraStatus === 'ok'
                 ? t('test.cameraReadyHint')
                 : cameraStatus === 'checking'
                 ? t('test.cameraCheckingHint')
-                : cameraError || t('test.cameraDenied')}
+                : t('test.cameraOffHint')}
             </p>
             {(cameraStatus === 'denied' || cameraStatus === 'unavailable') && (
               <button

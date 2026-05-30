@@ -93,12 +93,34 @@ const Header: React.FC<HeaderProps> = ({ user, collapsed, onToggle, onLogout }) 
       key: `${item.type}-${index}`,
       label: (
         <div className="max-w-72 py-1">
-          <p className={`text-xs font-black mb-1 ${item.is_read ? 'text-gray-500' : 'text-gray-900'}`}>{item.title}</p>
+          <p
+            className={`text-xs font-black mb-1 ${
+              item.is_read ? 'text-gray-500' : 'text-gray-900 dark:text-white'
+            }`}
+          >
+            {item.title}
+          </p>
           <p className="text-xs text-gray-500 leading-relaxed">{item.message}</p>
         </div>
       ),
       onClick: () => {
-        if (item.action_url) navigate(item.action_url.replace('/candidate/portal/reports/', '/reports/'));
+        // Status-change notifications carry the related vacancy id; we
+        // deep-link to /applications with a highlight so the user sees
+        // exactly which application moved.
+        if (item.related_vacancy_id) {
+          navigate(`/applications?highlight=${item.related_vacancy_id}`);
+          return;
+        }
+        if (!item.action_url) return;
+        // The backend ships portal-relative URLs like
+        // `/candidate/portal/reports/<id>` and `/applications`. Rewrite
+        // the prefixed reports URL onto the SPA's `/reports/:id` route;
+        // leave everything else alone.
+        const url = item.action_url.replace(
+          '/candidate/portal/reports/',
+          '/reports/',
+        );
+        navigate(url);
       },
     })),
     ]

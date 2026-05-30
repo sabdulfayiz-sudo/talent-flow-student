@@ -24,7 +24,8 @@ export type IntegrityEventType =
   | 'page_unload_attempt'
   | 'network_offline'
   | 'multiple_displays_suspected'
-  | 'face_not_detected';
+  | 'face_not_detected'
+  | 'camera_unavailable';
 
 export const EVENT_SEVERITY_HINT: Record<string, IntegritySeverity> = {
   fullscreen_exit: 'high',
@@ -47,6 +48,9 @@ export const EVENT_SEVERITY_HINT: Record<string, IntegritySeverity> = {
   fullscreen_entered: 'low',
   fullscreen_request_denied: 'low',
   face_not_detected: 'high',
+  // Camera missing / denied is informational only — never counts as a
+  // strike since proctoring isn't a hard requirement.
+  camera_unavailable: 'info',
 };
 
 export const HUMAN_LABELS: Record<string, string> = {
@@ -70,4 +74,5 @@ export const HUMAN_LABELS: Record<string, string> = {
   fullscreen_entered: 'Entered fullscreen',
   fullscreen_request_denied: 'Fullscreen request denied',
   face_not_detected: 'No face detected in camera',
+  camera_unavailable: 'Camera not available',
 };

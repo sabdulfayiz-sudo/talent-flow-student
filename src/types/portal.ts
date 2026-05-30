@@ -207,6 +207,8 @@ export interface NotificationItem {
   action_label: string;
   action_url: string | null;
   is_read?: boolean;
+  related_vacancy_id?: string | null;
+  related_candidate_id?: string | null;
 }
 
 export interface NotificationsResponse {
@@ -241,6 +243,59 @@ export interface ApplyResponse {
   status: string;
   company_name: string | null;
   applied_at: string;
+}
+
+// ============================================================
+// Vacancy detail + my-applications
+// Powers the Open Roles overhaul: full vacancy page, FIFA-style
+// pipeline tracker, and the linked-test summary per vacancy.
+// ============================================================
+
+export interface VacancyPracticeSummary {
+  practice_id: string;
+  title: string;
+  description: string | null;
+  duration_minutes: number;
+  deadline: string | null;
+  question_count: number;
+  tags: string[];
+  difficulty: string;
+}
+
+export interface VacancyApplicationBlock {
+  candidate_id: string;
+  status: string;
+  applied_at: string;
+  stage_index: number;
+  stage_total: number;
+  is_terminal: boolean;
+}
+
+export interface VacancyDetail {
+  id: string;
+  job_name: string;
+  job_description: string | null;
+  tag: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  is_open: boolean;
+  candidate_count: number;
+  company_id: string | null;
+  company_name: string | null;
+  practice: VacancyPracticeSummary | null;
+  application: VacancyApplicationBlock | null;
+  session_id: string | null;
+}
+
+export interface ApplicationsResponse {
+  items: VacancyDetail[];
+  counts: {
+    total: number;
+    in_progress: number;
+    completed: number;
+    rejected: number;
+  };
+  pipeline: string[];
 }
 
 export interface ReportResponse {
@@ -373,6 +428,13 @@ export interface SubmitAnswerResponse {
   total_questions: number;
   is_finished: boolean;
   final_score: number | null;
+  finish_reason?: string | null;
+  skill_estimate?: number;
+  suspicious_timing?: boolean;
+  // Backend folds the adaptive next-question selection into this
+  // response so the client doesn't need a second GET round-trip.
+  // `null` when the test just finished or the deadline expired.
+  next_question?: NextQuestionResponse | null;
 }
 
 export interface LeaderboardItem {

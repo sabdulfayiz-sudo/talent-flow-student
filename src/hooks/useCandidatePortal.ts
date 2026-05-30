@@ -4,6 +4,7 @@ import type {
   AchievementsResponse,
   AIProfileResponse,
   AnalyticsResponse,
+  ApplicationsResponse,
   ApplyResponse,
   AssessmentsResponse,
   AvatarUploadResponse,
@@ -27,6 +28,7 @@ import type {
   TestSessionProgress,
   TestSessionStart,
   VacanciesResponse,
+  VacancyDetail,
 } from '../types/portal';
 
 export const portalKeys = {
@@ -48,6 +50,9 @@ export const portalKeys = {
   achievements: ['candidatePortal', 'achievements'] as const,
   practiceCategories: ['candidatePortal', 'practice', 'categories'] as const,
   vacancies: (search: string) => ['candidatePortal', 'vacancies', search] as const,
+  vacancyDetail: (vacancyId: string) =>
+    ['candidatePortal', 'vacancy', vacancyId] as const,
+  applications: ['candidatePortal', 'applications'] as const,
 };
 
 export const useCandidateMe = () => (
@@ -273,12 +278,41 @@ export const useApplyToVacancy = () => {
         method: 'POST',
       })
     ),
-    onSuccess: () => {
+    onSuccess: (_, vacancyId) => {
       queryClient.invalidateQueries({ queryKey: ['candidatePortal', 'vacancies'] });
       queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
+      queryClient.invalidateQueries({ queryKey: portalKeys.applications });
+      queryClient.invalidateQueries({
+        queryKey: portalKeys.vacancyDetail(vacancyId),
+      });
     },
   });
 };
+
+// Full vacancy info for the open-roles detail modal: description,
+// dates, candidate count, the linked practice, and my application
+// status (if any).
+export const useVacancyDetail = (vacancyId?: string) => (
+  useQuery({
+    queryKey: portalKeys.vacancyDetail(vacancyId ?? ''),
+    queryFn: () => (
+      apiFetch<VacancyDetail>(`/candidate/portal/vacancies/${vacancyId}`)
+    ),
+    enabled: Boolean(vacancyId),
+    staleTime: 1000 * 30,
+  })
+);
+
+// My pipeline: every vacancy I've applied to with current status,
+// stage index for the FIFA-style stepper, linked test and my latest
+// session against it.
+export const useMyApplications = () => (
+  useQuery({
+    queryKey: portalKeys.applications,
+    queryFn: () => apiFetch<ApplicationsResponse>('/candidate/portal/applications'),
+    staleTime: 1000 * 30,
+  })
+);
 
 export const useReport = (sessionId?: string) => (
   useQuery({
@@ -369,10 +403,27 @@ export const useSubmitAnswer = (sessionId?: string) => {
         body: JSON.stringify(payload),
       })
     ),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Perf: the backend now ships the adaptive next-question alongside
+      // the answer result, so we seed the next-question cache directly
+      // instead of invalidating + refetching (which would cost an
+      // additional HTTP round-trip on every submission).
       if (sessionId) {
+        if (data.is_finished) {
+          // Test is over — drop the cached question so a stale stub
+          // doesn't briefly flash while we navigate to the report.
+          queryClient.removeQueries({
+            queryKey: portalKeys.nextQuestion(sessionId),
+          });
+        } else if (data.next_question) {
+          queryClient.setQueryData(
+            portalKeys.nextQuestion(sessionId),
+            data.next_question,
+          );
+        }
+        // Light session-meta refresh stays as an invalidation; it's not
+        // on the critical render path.
         queryClient.invalidateQueries({ queryKey: portalKeys.session(sessionId) });
-        queryClient.invalidateQueries({ queryKey: portalKeys.nextQuestion(sessionId) });
       }
       queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
       queryClient.invalidateQueries({ queryKey: ['candidatePortal', 'assessments'] });
