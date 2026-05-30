@@ -122,7 +122,10 @@
     "cameraOffTitle": "Kamera mavjud emas — proktoring oʻchirilgan",
     "cameraOffHint": "Testni topshirish mumkin, lekin admin urinish kamerasiz oʻtganini koʻradi.",
     "rightClickWarn": "Oʻng tugma yoziladi.",
-    "tabWarn": "Yorliqni almashtirish testni yakunlaydi."
+    "tabWarn": "Yorliqni almashtirish testni yakunlaydi.",
+    "strikeBannerTitle": "Ogohlantirish: {{strikes}} / {{limit}}",
+    "strikeBannerMore": "Yana {{remaining}} marta buzilsa, test avtomatik yakunlanadi.",
+    "strikeBannerLast": "Yana bir buzilish testni avtomatik yakunlaydi."
   },
   "aiInterview": {
     "title": "AI suhbat",

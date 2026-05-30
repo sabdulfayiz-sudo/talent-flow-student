@@ -122,6 +122,14 @@ const TestPage: React.FC = () => {
   const [gateOpen, setGateOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // Server-driven escalating strike banner (Ticket 3). `null` means no
+  // active warning. When the backend reports a strike that doesn't
+  // auto-finish, we pop a prominent banner with the running count.
+  // The threshold (`limit`) comes from the backend on every /events
+  // response so the UI never hard-codes the strike threshold.
+  const [strikeBanner, setStrikeBanner] = useState<
+    { strikes: number; limit: number; message?: string } | null
+  >(null);
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>('idle');
   const questionStartedAtRef = useRef(0);
   const autoSubmittedRef = useRef(false);
@@ -250,11 +258,26 @@ const TestPage: React.FC = () => {
     [t],
   );
 
+  // Strike banner stays visible long enough to read; if a second strike
+  // comes in, the banner is replaced with the higher count and the
+  // timer resets so the candidate sees the new count from the start.
+  const handleStrike = useCallback(
+    (info: { strikes: number; strikeLimit: number; message?: string }) => {
+      setStrikeBanner({
+        strikes: info.strikes,
+        limit: info.strikeLimit,
+        message: info.message,
+      });
+    },
+    [],
+  );
+
   const { reportEvent } = useAntiCheat({
     sessionId: effectiveSessionId,
     enabled: isTestActive,
     onHardStop: handleIntegrityStop,
     onViolation: handleViolationToast,
+    onStrike: handleStrike,
   });
 
   // If the backend says the user already finished or the timer expired,
@@ -365,6 +388,16 @@ const TestPage: React.FC = () => {
     const handle = window.setTimeout(() => setToast(null), 2400);
     return () => window.clearTimeout(handle);
   }, [toast]);
+
+  // Strike banner stays visible noticeably longer than the soft toast
+  // (8s) because the candidate needs time to read "Warning N of L".
+  // A fresh strike replaces the banner with the new count and re-runs
+  // this effect so the timer restarts from zero.
+  useEffect(() => {
+    if (!strikeBanner) return;
+    const handle = window.setTimeout(() => setStrikeBanner(null), 8000);
+    return () => window.clearTimeout(handle);
+  }, [strikeBanner]);
 
   const handleStartClick = () => {
     if (!practiceId) return;
@@ -676,7 +709,33 @@ const TestPage: React.FC = () => {
         </div>
       </div>
 
-      {toast && (
+      {strikeBanner && (
+        <div
+          className="relative z-30 rounded-2xl border-2 border-rose-300 bg-rose-50 text-rose-900 p-4 flex items-start gap-3 shadow-lg animate-pulse"
+          role="alert"
+          aria-live="assertive"
+        >
+          <WarningFilled className="mt-0.5 text-2xl text-rose-500" />
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-black uppercase tracking-wide">
+              {t('test.strikeBannerTitle', {
+                strikes: strikeBanner.strikes,
+                limit: strikeBanner.limit,
+              })}
+            </span>
+            <span className="text-xs font-semibold leading-snug">
+              {strikeBanner.message
+                ?? (strikeBanner.limit - strikeBanner.strikes <= 1
+                  ? t('test.strikeBannerLast')
+                  : t('test.strikeBannerMore', {
+                    remaining: strikeBanner.limit - strikeBanner.strikes,
+                  }))}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {toast && !strikeBanner && (
         <div className="relative z-20 rounded-2xl border border-amber-100 bg-amber-50 text-amber-800 p-3 flex items-start gap-2 text-xs font-semibold">
           <WarningFilled className="mt-0.5 text-base text-amber-500" />
           <span>{toast}</span>

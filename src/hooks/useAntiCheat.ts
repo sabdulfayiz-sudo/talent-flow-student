@@ -38,6 +38,12 @@ export interface UseAntiCheatOptions {
   onHardStop?: (violations: IntegrityViolation[]) => void;
   // Called on every recorded violation so the parent can show a toast.
   onViolation?: (violation: IntegrityViolation) => void;
+  // Called when the backend records a strike (warn / critical event)
+  // but does NOT auto-finish the session. Lets the parent render an
+  // escalating banner like "Warning N of L". `strikes` and
+  // `strikeLimit` come straight from the backend so the UI never
+  // hard-codes the threshold.
+  onStrike?: (info: { strikes: number; strikeLimit: number; message?: string }) => void;
 }
 
 const PENALTY: Record<IntegritySeverity, number> = {
@@ -88,6 +94,7 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
     warnPenalty = 20,
     onHardStop,
     onViolation,
+    onStrike,
   } = options;
 
   const [violations, setViolations] = useState<IntegrityViolation[]>([]);
@@ -108,7 +115,15 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
     // `{finished: true}` on a strike threshold breach — if so we trip
     // the hard-stop callback so the parent can navigate away.
     batch.forEach((v) => {
-      apiFetch<{ finished?: boolean; reason?: string; strikes?: number }>(
+      apiFetch<{
+        finished?: boolean;
+        reason?: string;
+        strikes?: number;
+        strike_limit?: number;
+        counts_as_strike?: boolean;
+        warning?: boolean;
+        message?: string;
+      }>(
         `/testing/sessions/${sessionId}/events`,
         {
           method: 'POST',
@@ -124,6 +139,22 @@ export const useAntiCheat = (options: UseAntiCheatOptions) => {
             hardStopFiredRef.current = true;
             setWarning(response.reason ?? 'Session ended by anti-cheat policy.');
             setTimeout(() => onHardStop?.(violations), 0);
+            return;
+          }
+          // Surface the escalating server-side strike to the parent so
+          // it can render a prominent "Warning N of L" banner. We only
+          // fire on `warning=true` (== counts_as_strike && !finished)
+          // so a noisy `severity=info` event doesn't trigger a banner.
+          if (
+            response?.warning
+            && typeof response.strikes === 'number'
+            && typeof response.strike_limit === 'number'
+          ) {
+            onStrike?.({
+              strikes: response.strikes,
+              strikeLimit: response.strike_limit,
+              message: response.message,
+            });
           }
         })
         .catch(() => {

@@ -122,7 +122,10 @@
     "cameraOffTitle": "Camera unavailable — proctoring is off",
     "cameraOffHint": "You can still take the test, but admins will see this attempt was not proctored.",
     "rightClickWarn": "Right-click is logged.",
-    "tabWarn": "Switching tabs ends the test."
+    "tabWarn": "Switching tabs ends the test.",
+    "strikeBannerTitle": "Warning {{strikes}} of {{limit}}",
+    "strikeBannerMore": "{{remaining}} more violations before your test is auto-submitted.",
+    "strikeBannerLast": "One more violation will auto-submit your test."
   },
   "aiInterview": {
     "title": "AI Interview",
