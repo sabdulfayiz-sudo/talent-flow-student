@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, apiFetch, buildQuery } from '../lib/api';
+import { apiFetch, buildQuery } from '../lib/api';
 import type {
   AchievementsResponse,
   AIProfileResponse,
@@ -360,35 +360,26 @@ export const useStartSession = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (practiceId: string) => {
-      // No-resume policy: this hook only starts NEW sessions. If the
-      // user already has any session for the practice the backend will
-      // return 409 and the UI redirects to the report page; we do not
-      // silently resume.
-      const eligibility = await apiFetch<PracticeEligibility>(
-        `/testing/practices/${practiceId}/eligibility`,
-      );
-
-      if (!eligibility.can_start) {
-        throw new ApiError(
-          409,
-          eligibility.reason ?? 'This assessment is not available.',
-          eligibility,
-        );
-      }
-
-      return apiFetch<TestSessionStart>(`/testing/practices/${practiceId}/sessions`, {
+    mutationFn: (practiceId: string) =>
+      // No-resume policy: the backend POST /sessions already 409s if any
+      // prior session exists (finished, abandoned, or in-flight), so we
+      // skip the redundant preflight GET /eligibility. The mutation
+      // attempts to start directly; ApiError surfaces the 409 reason.
+      apiFetch<TestSessionStart>(`/testing/practices/${practiceId}/sessions`, {
         method: 'POST',
         body: JSON.stringify({
           device_fingerprint: `${navigator.platform || 'unknown'}:${screen.width}x${screen.height}:${Intl.DateTimeFormat().resolvedOptions().timeZone || 'tz'}`,
         }),
-      });
-    },
+      }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: portalKeys.practice(data.practice_id) });
-      queryClient.invalidateQueries({ queryKey: portalKeys.eligibility(data.practice_id) });
       queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
       queryClient.invalidateQueries({ queryKey: ['candidatePortal', 'assessments'] });
+      // Intentionally NOT invalidating `eligibility` here. The test
+      // page transitions to test-mode via local `sessionId` state, so
+      // a stale-but-cached `eligible` eligibility entry is harmless,
+      // and refetching it would briefly flip the response to
+      // `in_progress` and trip the orphan-session detector.
     },
   });
 };
