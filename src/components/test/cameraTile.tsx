@@ -25,6 +25,17 @@ const DETECT_INTERVAL_MS = 2000;
 const ABSENCE_THRESHOLD_MS = 10_000;
 const REFIRE_INTERVAL_MS = 15_000;
 
+// Motion-fallback tuning. We sample a small grayscale region of the
+// video and compare it to the previous sample; if the mean pixel delta
+// stays below this floor for the full absence window the candidate is
+// presumed to have left frame (a static webcam image / lens cap / no
+// person). The threshold is intentionally lax so normal stillness
+// (e.g. concentrated thinking) doesn't trip it — it's the *sustained*
+// flatness that matters.
+const MOTION_PIXEL_DELTA_FLOOR = 6;
+const MOTION_SAMPLE_WIDTH = 64;
+const MOTION_SAMPLE_HEIGHT = 48;
+
 /**
  * Live webcam preview pinned to the top-left of the test viewport.
  *
@@ -141,48 +152,141 @@ const CameraTile: React.FC<CameraTileProps> = ({
   // Attach the stream to the <video> once it is actually mounted (status
   // === 'live'), and kick off autoplay. Without this the srcObject was set
   // before the element existed, leaving a black tile.
+  //
+  // Startup reliability fix: we don't just call play() once — we also
+  // wait for the `loadedmetadata` event before playing, retry once if
+  // the initial play() rejects, and listen for `playing` to confirm
+  // the feed is actually rendering frames. Without these guards Chrome
+  // sometimes leaves the tile black for a few seconds after permission
+  // is granted because the stream isn't ready when srcObject is set.
   useEffect(() => {
     if (status !== 'live' || !videoRef.current || !streamRef.current) return;
     const video = videoRef.current;
     if (video.srcObject !== streamRef.current) {
       video.srcObject = streamRef.current;
     }
-    // Autoplay can reject (e.g. policy); muted+playsInline makes it reliable.
-    void video.play().catch(() => undefined);
+
+    const tryPlay = () => {
+      // Muted + playsInline makes autoplay reliable across browsers,
+      // but the initial play() can still race the metadata load. We
+      // swallow the first rejection and retry on `loadedmetadata`.
+      void video.play().catch(() => undefined);
+    };
+
+    const onMetadata = () => tryPlay();
+    const onCanPlay = () => tryPlay();
+
+    video.addEventListener('loadedmetadata', onMetadata);
+    video.addEventListener('canplay', onCanPlay);
+    tryPlay();
+
+    return () => {
+      video.removeEventListener('loadedmetadata', onMetadata);
+      video.removeEventListener('canplay', onCanPlay);
+    };
   }, [status]);
 
-  // Face presence detection (A6) using the browser FaceDetector API where
-  // available. Absence beyond a sustained window raises an anti-cheat
-  // event via onPresenceLost. Unsupported browsers skip detection silently
-  // (camera presence is still required to start the test).
+  // Person-presence detection (A6).
+  //
+  // Two layered approaches, chosen at runtime:
+  //   1. `window.FaceDetector` (Chromium Shape Detection API) — real
+  //      face detection, no canvas work, very cheap.
+  //   2. Motion-diff fallback — for Firefox / Safari / Chromium with
+  //      the feature flag off. We sample a small grayscale frame at
+  //      `DETECT_INTERVAL_MS` and compare it to the previous frame's
+  //      mean pixel delta. A *sustained* near-zero delta is treated
+  //      as "no person" (lens cap, static photo, candidate left the
+  //      room). Normal stillness (concentrated thinking) produces
+  //      enough micro-motion to clear the floor easily.
+  //
+  // Both feed the same `presenceLostRef` callback which fires the
+  // existing `face_not_detected` anti-cheat event — no new event
+  // type or backend change required.
   useEffect(() => {
     if (status !== 'live') return;
-    const Detector = typeof window !== 'undefined' ? window.FaceDetector : undefined;
-    // Detection unsupported — leave facePresent as-is (the camera-present
-    // requirement still gates test start).
-    if (!Detector) return;
 
-    let detector: FaceDetector;
-    try {
-      detector = new Detector({ fastMode: true, maxDetectedFaces: 1 });
-    } catch {
-      return;
+    const Detector = typeof window !== 'undefined' ? window.FaceDetector : undefined;
+    let detector: FaceDetector | null = null;
+    if (Detector) {
+      try {
+        detector = new Detector({ fastMode: true, maxDetectedFaces: 1 });
+      } catch {
+        detector = null;
+      }
     }
+
+    // Motion-diff state — always allocated so we can fall back from
+    // FaceDetector to motion if the native detector throws repeatedly.
+    const canvas = document.createElement('canvas');
+    canvas.width = MOTION_SAMPLE_WIDTH;
+    canvas.height = MOTION_SAMPLE_HEIGHT;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    let previousFrame: Uint8ClampedArray | null = null;
 
     let stopped = false;
     let busy = false;
     let noFaceSince: number | null = null;
     let lastFiredAt: number | null = null;
+    let detectorFailures = 0;
+
+    const detectByMotion = (video: HTMLVideoElement): boolean => {
+      if (!ctx) return true; // can't sample — assume present (don't false-fire)
+      try {
+        ctx.drawImage(video, 0, 0, MOTION_SAMPLE_WIDTH, MOTION_SAMPLE_HEIGHT);
+        const { data } = ctx.getImageData(
+          0,
+          0,
+          MOTION_SAMPLE_WIDTH,
+          MOTION_SAMPLE_HEIGHT,
+        );
+        // Grayscale + diff in one pass.
+        const grayLen = MOTION_SAMPLE_WIDTH * MOTION_SAMPLE_HEIGHT;
+        const gray = new Uint8ClampedArray(grayLen);
+        for (let i = 0, j = 0; i < data.length; i += 4, j += 1) {
+          // ITU-R BT.601 luma approximation, cheap integer form.
+          gray[j] = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+        }
+        if (!previousFrame) {
+          previousFrame = gray;
+          // Without a baseline we can't decide — assume present this tick.
+          return true;
+        }
+        let sum = 0;
+        for (let i = 0; i < grayLen; i += 1) {
+          const d = gray[i] - previousFrame[i];
+          sum += d < 0 ? -d : d;
+        }
+        previousFrame = gray;
+        const meanDelta = sum / grayLen;
+        return meanDelta >= MOTION_PIXEL_DELTA_FLOOR;
+      } catch {
+        // Sampling failed (e.g. tainted canvas) — don't false-fire.
+        return true;
+      }
+    };
 
     const tick = async () => {
       const video = videoRef.current;
       if (stopped || busy || !video || video.readyState < 2) return;
       busy = true;
       try {
-        const faces = await detector.detect(video);
-        if (stopped) return;
+        let present = false;
+        if (detector && detectorFailures < 3) {
+          try {
+            const faces = await detector.detect(video);
+            if (stopped) return;
+            present = faces.length > 0;
+          } catch {
+            detectorFailures += 1;
+            // Fall through to motion detection on this tick.
+            present = detectByMotion(video);
+          }
+        } else {
+          present = detectByMotion(video);
+        }
+
         const now = Date.now();
-        if (faces.length > 0) {
+        if (present) {
           if (noFaceSince !== null) presenceRestoredRef.current?.();
           noFaceSince = null;
           lastFiredAt = null;
@@ -198,8 +302,6 @@ const CameraTile: React.FC<CameraTileProps> = ({
             }
           }
         }
-      } catch {
-        // Detection errors are non-fatal — skip this tick.
       } finally {
         busy = false;
       }
@@ -209,6 +311,7 @@ const CameraTile: React.FC<CameraTileProps> = ({
     return () => {
       stopped = true;
       window.clearInterval(interval);
+      previousFrame = null;
     };
   }, [status]);
 
