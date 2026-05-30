@@ -34,6 +34,7 @@ const SignUp = lazy(() => import('./pages/signUp'));
 const SetPasswordPage = lazy(() => import('./pages/setPassword'));
 const CompleteProfilePage = lazy(() => import('./pages/completeProfile'));
 const JobsPage = lazy(() => import('./pages/jobs'));
+const ApplicationsPage = lazy(() => import('./pages/applications'));
 
 const PageFallback: React.FC = () => (
   <div className="min-h-120 flex items-center justify-center">
@@ -115,6 +116,7 @@ const App: React.FC = () => {
               <Route element={<MainLayout />}>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/jobs" element={<JobsPage />} />
+                <Route path="/applications" element={<ApplicationsPage />} />
                 <Route path="/my-assessments" element={<AssessmentsPage />} />
                 <Route path="/practice" element={<PracticePage />} />
                 <Route path="/leaderboard" element={<LeaderboardPage />} />
