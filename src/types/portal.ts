@@ -428,6 +428,13 @@ export interface SubmitAnswerResponse {
   total_questions: number;
   is_finished: boolean;
   final_score: number | null;
+  finish_reason?: string | null;
+  skill_estimate?: number;
+  suspicious_timing?: boolean;
+  // Backend folds the adaptive next-question selection into this
+  // response so the client doesn't need a second GET round-trip.
+  // `null` when the test just finished or the deadline expired.
+  next_question?: NextQuestionResponse | null;
 }
 
 export interface LeaderboardItem {

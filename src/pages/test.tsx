@@ -427,6 +427,10 @@ const TestPage: React.FC = () => {
   const handleSubmit = async () => {
     if (!nextQuestion.data?.id || !selectedAnswer) return;
     try {
+      // Perf: this single mutate also returns the next adaptive
+      // question in its response — `useSubmitAnswer` seeds the
+      // next-question cache from `data.next_question`, so we no
+      // longer need a separate `nextQuestion.refetch()` round-trip.
       const result = await submitAnswer.mutateAsync({
         question_id: nextQuestion.data.id,
         user_answer: selectedAnswer,
@@ -441,7 +445,12 @@ const TestPage: React.FC = () => {
         return;
       }
 
-      await nextQuestion.refetch();
+      // Defensive: if the backend (older deployment) didn't include
+      // the next question payload, fall back to a refetch so we don't
+      // end up stuck on the just-answered question.
+      if (!result.next_question) {
+        await nextQuestion.refetch();
+      }
     } catch (error) {
       message.error(error instanceof Error ? error.message : t('errors.generic'));
     }
