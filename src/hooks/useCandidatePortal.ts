@@ -403,10 +403,27 @@ export const useSubmitAnswer = (sessionId?: string) => {
         body: JSON.stringify(payload),
       })
     ),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Perf: the backend now ships the adaptive next-question alongside
+      // the answer result, so we seed the next-question cache directly
+      // instead of invalidating + refetching (which would cost an
+      // additional HTTP round-trip on every submission).
       if (sessionId) {
+        if (data.is_finished) {
+          // Test is over — drop the cached question so a stale stub
+          // doesn't briefly flash while we navigate to the report.
+          queryClient.removeQueries({
+            queryKey: portalKeys.nextQuestion(sessionId),
+          });
+        } else if (data.next_question) {
+          queryClient.setQueryData(
+            portalKeys.nextQuestion(sessionId),
+            data.next_question,
+          );
+        }
+        // Light session-meta refresh stays as an invalidation; it's not
+        // on the critical render path.
         queryClient.invalidateQueries({ queryKey: portalKeys.session(sessionId) });
-        queryClient.invalidateQueries({ queryKey: portalKeys.nextQuestion(sessionId) });
       }
       queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
       queryClient.invalidateQueries({ queryKey: ['candidatePortal', 'assessments'] });
