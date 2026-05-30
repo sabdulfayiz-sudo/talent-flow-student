@@ -404,29 +404,38 @@ export const useSubmitAnswer = (sessionId?: string) => {
       })
     ),
     onSuccess: (data) => {
-      // Perf: the backend now ships the adaptive next-question alongside
-      // the answer result, so we seed the next-question cache directly
-      // instead of invalidating + refetching (which would cost an
-      // additional HTTP round-trip on every submission).
-      if (sessionId) {
-        if (data.is_finished) {
-          // Test is over — drop the cached question so a stale stub
-          // doesn't briefly flash while we navigate to the report.
-          queryClient.removeQueries({
-            queryKey: portalKeys.nextQuestion(sessionId),
-          });
-        } else if (data.next_question) {
-          queryClient.setQueryData(
-            portalKeys.nextQuestion(sessionId),
-            data.next_question,
-          );
-        }
-        // Light session-meta refresh stays as an invalidation; it's not
-        // on the critical render path.
+      // Hot path: the backend already returned everything we need to
+      // render the next question (`data.next_question`) and the next
+      // progress numbers (`answered_count` / `total_questions`). We
+      // seed the next-question cache directly and DO NOT fire any
+      // background invalidations — those used to trigger refetches on
+      // `useSessionProgress` (15s poller, kicked immediately by an
+      // invalidate), the dashboard, and assessments on every single
+      // submit, which made every question feel sluggish.
+      //
+      // Per-submit invalidations are reserved for the terminal case
+      // (test finished) because the candidate is about to navigate
+      // back to dashboards that must reflect the new completion.
+      if (!sessionId) return;
+
+      if (data.is_finished) {
+        // Drop the cached question so a stale stub doesn't briefly
+        // flash while we navigate to the report.
+        queryClient.removeQueries({
+          queryKey: portalKeys.nextQuestion(sessionId),
+        });
         queryClient.invalidateQueries({ queryKey: portalKeys.session(sessionId) });
+        queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
+        queryClient.invalidateQueries({ queryKey: ['candidatePortal', 'assessments'] });
+        return;
       }
-      queryClient.invalidateQueries({ queryKey: portalKeys.dashboard });
-      queryClient.invalidateQueries({ queryKey: ['candidatePortal', 'assessments'] });
+
+      if (data.next_question) {
+        queryClient.setQueryData(
+          portalKeys.nextQuestion(sessionId),
+          data.next_question,
+        );
+      }
     },
   });
 };
